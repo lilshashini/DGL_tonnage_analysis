@@ -30,6 +30,7 @@ def generate_dashboard_pdf(
     max_data_rows: int = 100,
     mode: str = "standard",
     custom_sql: str = None,
+    query_id: str = None,
 ):
     """
     Directs a headless browser to the frontend print view and captures a PDF.
@@ -46,9 +47,12 @@ def generate_dashboard_pdf(
     params = {}
     
     # Add mode and query-specific parameters
-    if mode == "custom-sql" and custom_sql:
+    if mode == "custom-sql":
         params["mode"] = "custom-sql"
-        params["custom_sql"] = custom_sql
+        if query_id:
+            params["query_id"] = query_id
+        elif custom_sql:
+            params["custom_sql"] = custom_sql
     else:
         # Standard mode - add date range and filters
         if start_date: params["start_date"] = start_date

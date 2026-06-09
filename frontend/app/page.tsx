@@ -43,11 +43,11 @@ const TEN_COLORS = ["#4299E1", "#319795", "#ED64A6", "#5A67D8", "#81E6D9", "#ED8
 
 // Branded airline colors — matched by lowercase substring of airline name
 const AIRLINE_COLORS: { [key: string]: string } = {
-  "turkish": "#C70A0C",
+  "turkish": "#e65757ff",
   "vietnam": "#005e80",
   "etihad": "#C4921B",
   "asiana": "#464A4C",
-  "air canada": "#F01428",
+  "air canada": "#ff938bff",
   "cathay": "#005D63",
 };
 
@@ -214,6 +214,29 @@ export default function Dashboard() {
 
   // Modal preview state
   const [showPdfPreview, setShowPdfPreview] = useState(false);
+  const [cachedQueryId, setCachedQueryId] = useState<string | null>(null);
+
+  const openPdfPreview = async () => {
+    if (dashboardMode === "custom-sql") {
+      setLoading(true);
+      try {
+        const res = await fetch(`${API}/api/cache-query`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ query: customSqlText }),
+        });
+        const d = await res.json();
+        if (d.status === "success" && d.query_id) {
+          setCachedQueryId(d.query_id);
+        }
+      } catch (err) {
+        console.error("Failed to cache query for preview", err);
+      } finally {
+        setLoading(false);
+      }
+    }
+    setShowPdfPreview(true);
+  };
 
   // Load candidate recipients from API
   const fetchRecipients = useCallback(async () => {
@@ -948,21 +971,54 @@ ORDER BY vt.ETD DESC, vt.Revenue_USD DESC`);
   // Process data for Trade Routes Pie Chart (Top 5 + Others) — used in SQL Sandbox mode
   const getTradeRouteData = () => {
     const grouped = data.reduce((acc: any, curr: any) => {
-      const origin = curr.Origin_Country || curr.ConLoadPortCountryName || curr.Origin_City || "Unknown";
-      const dest = curr.Destination_Country || curr.DestCountry || curr.Destination_City || "Unknown";
-      const route = `${origin} → ${dest}`;
-      acc[route] = (acc[route] || 0) + Number(curr.Total_Tonnage ?? curr.Tonnage_Chargeable ?? curr.Air_ChargebleWeight ?? curr.tonnage ?? 0);
+      const originCountry = curr.Origin_Country || curr.ConLoadPortCountryName || "";
+      const originCity = curr.Origin_City || curr.OriginCity || curr.origin_city || "";
+      const hasOriginCity = originCity && originCity !== "N/A" && originCity !== "—";
+      const originCityClean = hasOriginCity ? originCity : "Unknown City";
+      const originCountryClean = originCountry || "Unknown Country";
+
+      const destCountry = curr.Destination_Country || curr.DestCountry || curr.dest_country || "";
+      const destCity = curr.Destination_City || curr.DestCity || curr.dest_city || "";
+      const hasDestCity = destCity && destCity !== "N/A" && destCity !== "—";
+      const destCityClean = hasDestCity ? destCity : "Unknown City";
+      const destCountryClean = destCountry || "Unknown Country";
+
+      const key = `${originCityClean}||${originCountryClean}||${destCityClean}||${destCountryClean}`;
+      acc[key] = (acc[key] || 0) + Number(curr.Total_Tonnage ?? curr.Tonnage_Chargeable ?? curr.Air_ChargebleWeight ?? curr.tonnage ?? 0);
       return acc;
     }, {});
 
     const sorted = Object.entries(grouped)
-      .map(([name, value]) => ({ name, value: value as number }))
+      .map(([key, value]) => {
+        const [originCity, originCountry, destCity, destCountry] = key.split("||");
+        const name = `${originCity} (${originCountry}) → ${destCity} (${destCountry})`;
+        return {
+          name,
+          originCity,
+          originCountry,
+          destCity,
+          destCountry,
+          value: value as number,
+          isOthers: false,
+        };
+      })
       .sort((a, b) => b.value - a.value);
 
     if (sorted.length <= 5) return sorted;
     const top5 = sorted.slice(0, 5);
     const othersVal = sorted.slice(5).reduce((sum, item) => sum + item.value, 0);
-    return [...top5, { name: "Others", value: othersVal }];
+    return [
+      ...top5,
+      {
+        name: "Others",
+        originCity: "Others",
+        originCountry: "Various",
+        destCity: "Others",
+        destCountry: "Various",
+        value: othersVal,
+        isOthers: true,
+      },
+    ];
   };
 
   const tradeRouteData = getTradeRouteData();
@@ -1010,13 +1066,17 @@ ORDER BY vt.ETD DESC, vt.Revenue_USD DESC`);
     if (dashboardMode === "custom-sql") {
       const params = new URLSearchParams({
         mode: "custom-sql",
-        custom_sql: customSqlText,
         include_weekly_visual: pdfSections.weeklyVisual.toString(),
         include_weekly_ledger: pdfSections.weeklyLedger.toString(),
         include_monthly_visual: pdfSections.monthlyVisual.toString(),
         include_monthly_ledger: "false",
         max_data_rows: "100",
       });
+      if (cachedQueryId) {
+        params.append("query_id", cachedQueryId);
+      } else {
+        params.append("custom_sql", customSqlText);
+      }
       return `/print-view?${params.toString()}`;
     }
     const params = new URLSearchParams({ start_date: startDate, end_date: endDate });
@@ -1167,7 +1227,7 @@ ORDER BY vt.ETD DESC, vt.Revenue_USD DESC`);
 
             {/* Premium PDF Live Preview Trigger */}
             <Button
-              onClick={() => setShowPdfPreview(true)}
+              onClick={openPdfPreview}
               className="h-8 px-3.5 bg-white hover:bg-slate-50 border border-[#CBD5E0] text-slate-700 text-xs font-bold rounded-md flex items-center gap-1.5 transition-all shadow-sm"
             >
               <FileText className="w-3.5 h-3.5 text-slate-500" />
@@ -1921,8 +1981,8 @@ ORDER BY vt.ETD DESC, vt.Revenue_USD DESC`);
           {dashboardMode === "custom-sql" && (
             <div className="grid grid-cols-12 gap-6 mt-6">
 
-              {/* NEW: Airline Tonnage by Week — Horizontal Stacked Bar (col-span-7) */}
-              <div className="col-span-12 lg:col-span-7 saas-card p-6 bg-white flex flex-col min-h-[380px]">
+              {/* NEW: Airline Tonnage by Week — Horizontal Stacked Bar (col-span-12) */}
+              <div className="col-span-12 saas-card p-6 bg-white flex flex-col min-h-[380px]">
                 <div className="flex items-center justify-between mb-4 pb-2 border-b border-[#F1F5F9]">
                   <div>
                     <p className="text-[11px] font-bold uppercase tracking-widest text-[#4299E1]">Airline Breakdown</p>
@@ -1961,8 +2021,7 @@ ORDER BY vt.ETD DESC, vt.Revenue_USD DESC`);
                           tick={{ fontSize: 8, fill: "#4A5568", fontWeight: 600 }}
                           axisLine={{ stroke: "#E2E8F0" }}
                           tickLine={false}
-                          width={95}
-                          tickFormatter={(v: string) => v.length > 20 ? v.slice(0, 19) + "…" : v}
+                          width={140}
                         />
                         <Tooltip
                           contentStyle={{ fontSize: "10px", borderRadius: "6px", maxWidth: "240px" }}
@@ -1996,8 +2055,8 @@ ORDER BY vt.ETD DESC, vt.Revenue_USD DESC`);
                     {airlineWeeklyStackData.map((row: any) => (
                       <div key={row.airline} className="flex items-center gap-1.5">
                         <span className="w-2.5 h-2.5 rounded-sm shrink-0" style={{ backgroundColor: getAirlineColor(row.airline, row.colorIdx) }} />
-                        <span className="text-[10px] font-medium text-slate-600 truncate max-w-[120px]" title={row.airline}>
-                          {row.airline.length > 16 ? row.airline.slice(0, 15) + "…" : row.airline}
+                        <span className="text-[10px] font-medium text-slate-655" title={row.airline}>
+                          {row.airline}
                         </span>
                       </div>
                     ))}
@@ -2005,8 +2064,8 @@ ORDER BY vt.ETD DESC, vt.Revenue_USD DESC`);
                 )}
               </div>
 
-              {/* Trade Routes Pie Chart — Top 5 + Others (col-span-5) */}
-              <div className="col-span-12 lg:col-span-5 saas-card p-5 bg-white flex flex-col min-h-[380px] overflow-hidden">
+              {/* Trade Routes Pie Chart — Top 5 + Others (col-span-12) */}
+              <div className="col-span-12 saas-card p-6 bg-white flex flex-col min-h-[480px]">
                 <div className="flex items-center justify-between mb-3 pb-2 border-b border-[#F1F5F9] shrink-0">
                   <div>
                     <p className="text-[11px] font-bold text-slate-400 uppercase tracking-widest">Route Distribution</p>
@@ -2028,15 +2087,15 @@ ORDER BY vt.ETD DESC, vt.Revenue_USD DESC`);
                 ) : (
                   <div className="flex flex-col flex-1 min-h-0 gap-3">
                     {/* Pie Chart — contained height */}
-                    <div className="relative w-full" style={{ height: 220 }}>
+                    <div className="relative w-full" style={{ height: 320 }}>
                       <ResponsiveContainer width="100%" height="100%">
                         <PieChart margin={{ top: 4, right: 4, bottom: 4, left: 4 }}>
                           <Pie
                             data={tradeRouteData}
                             cx="50%"
                             cy="50%"
-                            innerRadius="40%"
-                            outerRadius="72%"
+                            innerRadius="48%"
+                            outerRadius="82%"
                             paddingAngle={3}
                             dataKey="value"
                           >
@@ -2053,9 +2112,16 @@ ORDER BY vt.ETD DESC, vt.Revenue_USD DESC`);
                               const color = PIE_COLORS[tradeRouteData.findIndex(r => r.name === item.name) % PIE_COLORS.length];
                               return (
                                 <div className="bg-white border border-[#CBD5E0] shadow-xl rounded-lg p-3 text-xs min-w-[180px] max-w-[240px]">
-                                  <div className="flex items-center gap-2 mb-2 pb-1.5 border-b border-slate-100">
-                                    <span className="w-2.5 h-2.5 rounded-full shrink-0" style={{ backgroundColor: color }} />
-                                    <span className="font-bold text-slate-800 leading-tight">{item.name}</span>
+                                  <div className="flex items-start gap-2 mb-2 pb-1.5 border-b border-slate-100">
+                                    <span className="w-2.5 h-2.5 rounded-full shrink-0 mt-1" style={{ backgroundColor: color }} />
+                                    {item.isOthers ? (
+                                      <span className="font-bold text-slate-800 leading-tight">Others</span>
+                                    ) : (
+                                      <div className="flex flex-col min-w-0">
+                                        <span className="font-bold text-slate-800 leading-tight">{item.originCity} → {item.destCity}</span>
+                                        <span className="text-[10px] text-slate-400 mt-0.5">{item.originCountry} → {item.destCountry}</span>
+                                      </div>
+                                    )}
                                   </div>
                                   <div className="space-y-1">
                                     <div className="flex justify-between items-center gap-4">
@@ -2082,30 +2148,41 @@ ORDER BY vt.ETD DESC, vt.Revenue_USD DESC`);
                       </div>
                     </div>
 
-                    {/* Legend — scrollable if needed */}
-                    <div className="flex-1 overflow-y-auto space-y-2 pr-0.5">
+                    {/* Legend — grid layout for full-width card */}
+                    <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-x-6 gap-y-3 mt-4">
                       {tradeRouteData.map((entry, idx) => {
                         const total = tradeRouteData.reduce((s, r) => s + r.value, 0);
                         const pct = total > 0 ? ((entry.value / total) * 100).toFixed(1) : "0.0";
                         return (
-                          <div key={entry.name} className="flex items-center gap-2.5">
+                          <div key={entry.name} className="flex items-start gap-2.5">
                             <span
-                              className="w-2.5 h-2.5 rounded-full flex-shrink-0"
+                              className="w-2.5 h-2.5 rounded-full flex-shrink-0 mt-1"
                               style={{ backgroundColor: PIE_COLORS[idx % PIE_COLORS.length] }}
                             />
                             <div className="flex-1 min-w-0">
-                              <div className="flex items-center justify-between gap-1">
-                                <span className="text-[11px] font-semibold text-slate-700 truncate" title={entry.name}>{entry.name}</span>
+                              <div className="flex items-start justify-between gap-1">
+                                {entry.isOthers ? (
+                                  <span className="text-[11px] font-semibold text-slate-700 truncate">Others</span>
+                                ) : (
+                                  <div className="flex flex-col min-w-0">
+                                    <span className="text-[11px] font-bold text-slate-700 truncate" title={`${entry.originCity} → ${entry.destCity}`}>
+                                      {entry.originCity} → {entry.destCity}
+                                    </span>
+                                    <span className="text-[9px] font-medium text-slate-400 truncate" title={`${entry.originCountry} → ${entry.destCountry}`}>
+                                      {entry.originCountry} → {entry.destCountry}
+                                    </span>
+                                  </div>
+                                )}
                                 <span className="text-[11px] font-bold text-slate-800 tabular-nums shrink-0">{formatNumber(entry.value)} kg</span>
                               </div>
-                              <div className="mt-0.5 h-1 bg-slate-100 rounded-full overflow-hidden">
+                              <div className="mt-1.5 h-1 bg-slate-100 rounded-full overflow-hidden">
                                 <div
                                   className="h-full rounded-full transition-all duration-500"
                                   style={{ width: `${pct}%`, backgroundColor: PIE_COLORS[idx % PIE_COLORS.length] }}
                                 />
                               </div>
                             </div>
-                            <span className="text-[10px] font-bold text-slate-400 shrink-0 w-9 text-right">{pct}%</span>
+                            <span className="text-[10px] font-bold text-slate-400 shrink-0 w-9 text-right mt-0.5">{pct}%</span>
                           </div>
                         );
                       })}
@@ -2202,7 +2279,7 @@ ORDER BY vt.ETD DESC, vt.Revenue_USD DESC`);
                     <tbody className="divide-y divide-[#F1F5F9]">
                       {rows.map((row, i) => {
                         const isOthers = row.airline.startsWith("Others");
-                        const gpMargin = row.revenue > 0 ? ((row.revenue - row.cost) / row.revenue * 100) : 0;
+                        const gpMargin = row.revenue > 0 ? ((row.revenue + row.cost) / row.revenue * 100) : 0;
                         const totalTonnage = grandTotal.tonnage;
                         const pct = totalTonnage > 0 ? (row.tonnage / totalTonnage * 100) : 0;
                         return (
@@ -2249,9 +2326,9 @@ ORDER BY vt.ETD DESC, vt.Revenue_USD DESC`);
                             <td className="px-3 py-3 text-right font-semibold text-slate-700 tabular-nums">{formatNumber(row.shipments)}</td>
                             <td className="px-3 py-3 text-right font-bold text-emerald-600 tabular-nums">{formatCurrency(row.revenue)}</td>
                             <td className="px-3 py-3 text-right font-semibold text-slate-500 tabular-nums">{formatCurrency(row.cost)}</td>
-                            <td className="px-3 py-3 text-right font-bold text-[#2D3748] tabular-nums">{formatCurrency(row.revenue - row.cost)}</td>
+                            <td className="px-3 py-3 text-right font-bold text-[#2D3748] tabular-nums">{formatCurrency(row.revenue + row.cost)}</td>
                             <td className="px-3 py-3 text-right tabular-nums">
-                              <span className={`font-bold px-1.5 py-0.5 rounded text-[10px] ${gpMargin >= 20 ? "bg-emerald-50 text-emerald-600" : gpMargin >= 10 ? "bg-amber-50 text-amber-600" : "bg-rose-50 text-rose-500"}`}>
+                              <span className={`font-bold text-[10px] ${gpMargin >= 20 ? "text-emerald-600" : gpMargin >= 10 ? "text-amber-600" : "text-rose-500"}`}>
                                 {gpMargin.toFixed(1)}%
                               </span>
                             </td>
@@ -2269,10 +2346,10 @@ ORDER BY vt.ETD DESC, vt.Revenue_USD DESC`);
                         <td className="px-3 py-3 text-right text-slate-700 tabular-nums">{formatNumber(grandTotal.shipments)}</td>
                         <td className="px-3 py-3 text-right text-emerald-600 tabular-nums">{formatCurrency(grandTotal.revenue)}</td>
                         <td className="px-3 py-3 text-right text-slate-500 tabular-nums">{formatCurrency(grandTotal.cost)}</td>
-                        <td className="px-3 py-3 text-right text-[#2D3748] tabular-nums">{formatCurrency(grandTotal.revenue - grandTotal.cost)}</td>
+                        <td className="px-3 py-3 text-right text-[#2D3748] tabular-nums">{formatCurrency(grandTotal.revenue + grandTotal.cost)}</td>
                         <td className="px-3 py-3 text-right">
                           <span className="font-bold text-slate-600 text-[10px]">
-                            {grandTotal.revenue > 0 ? ((grandTotal.revenue - grandTotal.cost) / grandTotal.revenue * 100).toFixed(1) : "0.0"}%
+                            {grandTotal.revenue > 0 ? ((grandTotal.revenue + grandTotal.cost) / grandTotal.revenue * 100).toFixed(1) : "0.0"}%
                           </span>
                         </td>
                       </tr>
@@ -2343,6 +2420,18 @@ ORDER BY vt.ETD DESC, vt.Revenue_USD DESC`);
 
                 const ROUTE_COLORS = ["#319795", "#4299E1", "#805AD5", "#D69E2E", "#E53E3E", "#38A169", "#DD6B20", "#3182CE", "#744210", "#2B6CB0"];
 
+                // Dynamically map each unique origin country to a single color
+                const countryColorsMap: { [country: string]: string } = {};
+                let nextColorIdx = 0;
+                const getCountryColor = (country: string): string => {
+                  if (country.startsWith("Others")) return "#718096";
+                  if (!countryColorsMap[country]) {
+                    countryColorsMap[country] = ROUTE_COLORS[nextColorIdx % ROUTE_COLORS.length];
+                    nextColorIdx++;
+                  }
+                  return countryColorsMap[country];
+                };
+
                 if (rows.length === 0) {
                   return (
                     <div className="py-14 flex flex-col items-center gap-2 text-slate-400">
@@ -2372,10 +2461,10 @@ ORDER BY vt.ETD DESC, vt.Revenue_USD DESC`);
                     <tbody className="divide-y divide-[#F1F5F9]">
                       {rows.map((row, i) => {
                         const isOthers = row.originCountry.startsWith("Others");
-                        const gpMargin = row.revenue > 0 ? ((row.revenue - row.cost) / row.revenue * 100) : 0;
+                        const gpMargin = row.revenue > 0 ? ((row.revenue + row.cost) / row.revenue * 100) : 0;
                         const totalTonnage = grandTotal.tonnage;
                         const pct = totalTonnage > 0 ? (row.tonnage / totalTonnage * 100) : 0;
-                        const color = ROUTE_COLORS[i % ROUTE_COLORS.length];
+                        const color = getCountryColor(row.originCountry);
                         return (
                           <tr
                             key={i}
@@ -2418,9 +2507,9 @@ ORDER BY vt.ETD DESC, vt.Revenue_USD DESC`);
                             <td className="px-3 py-3 text-right font-semibold text-slate-700 tabular-nums">{formatNumber(row.shipments)}</td>
                             <td className="px-3 py-3 text-right font-bold text-emerald-600 tabular-nums">{formatCurrency(row.revenue)}</td>
                             <td className="px-3 py-3 text-right font-semibold text-slate-500 tabular-nums">{formatCurrency(row.cost)}</td>
-                            <td className="px-3 py-3 text-right font-bold text-[#2D3748] tabular-nums">{formatCurrency(row.revenue - row.cost)}</td>
+                            <td className="px-3 py-3 text-right font-bold text-[#2D3748] tabular-nums">{formatCurrency(row.revenue + row.cost)}</td>
                             <td className="px-3 py-3 text-right tabular-nums">
-                              <span className={`font-bold px-1.5 py-0.5 rounded text-[10px] ${gpMargin >= 20 ? "bg-emerald-50 text-emerald-600" : gpMargin >= 10 ? "bg-amber-50 text-amber-600" : "bg-rose-50 text-rose-500"}`}>
+                              <span className={`font-bold text-[10px] ${gpMargin >= 20 ? "text-emerald-600" : gpMargin >= 10 ? "text-amber-600" : "text-rose-500"}`}>
                                 {gpMargin.toFixed(1)}%
                               </span>
                             </td>
@@ -2439,10 +2528,10 @@ ORDER BY vt.ETD DESC, vt.Revenue_USD DESC`);
                         <td className="px-3 py-3 text-right text-slate-700 tabular-nums">{formatNumber(grandTotal.shipments)}</td>
                         <td className="px-3 py-3 text-right text-emerald-600 tabular-nums">{formatCurrency(grandTotal.revenue)}</td>
                         <td className="px-3 py-3 text-right text-slate-500 tabular-nums">{formatCurrency(grandTotal.cost)}</td>
-                        <td className="px-3 py-3 text-right text-[#2D3748] tabular-nums">{formatCurrency(grandTotal.revenue - grandTotal.cost)}</td>
+                        <td className="px-3 py-3 text-right text-[#2D3748] tabular-nums">{formatCurrency(grandTotal.revenue + grandTotal.cost)}</td>
                         <td className="px-3 py-3 text-right">
                           <span className="font-bold text-slate-600 text-[10px]">
-                            {grandTotal.revenue > 0 ? ((grandTotal.revenue - grandTotal.cost) / grandTotal.revenue * 100).toFixed(1) : "0.0"}%
+                            {grandTotal.revenue > 0 ? ((grandTotal.revenue + grandTotal.cost) / grandTotal.revenue * 100).toFixed(1) : "0.0"}%
                           </span>
                         </td>
                       </tr>
@@ -2810,7 +2899,7 @@ ORDER BY vt.ETD DESC, vt.Revenue_USD DESC`);
                 <Button
                   onClick={() => {
                     setShowSectionSelector(false);
-                    setShowPdfPreview(true);
+                    openPdfPreview();
                   }}
                   className="h-8 px-4 bg-[#4299E1] hover:bg-[#3182CE] text-white text-xs font-semibold rounded-md flex items-center gap-1.5"
                 >

@@ -243,11 +243,21 @@ def fetch_branches(company_code: str = None):
         raise HTTPException(status_code=500, detail=str(e))
 
 
+# Cache store for custom SQL queries to prevent URL length limit issues
+query_cache = {}
+
+
 # --- HELPER: Background Task for PDF & Email ---
 def process_pdf_and_email(req: ReportRequest):
     """Runs in the background so the frontend doesn't hang waiting for Playwright."""
     os.makedirs("outputs", exist_ok=True)
     temp_pdf_path = f"outputs/report_{uuid.uuid4().hex}.pdf"
+    
+    query_id = None
+    if req.mode == "custom-sql" and req.custom_sql:
+        query_id = str(uuid.uuid4())
+        query_cache[query_id] = req.custom_sql
+        
     try:
         generate_dashboard_pdf(
             start_date=req.start_date,
@@ -267,6 +277,7 @@ def process_pdf_and_email(req: ReportRequest):
             max_data_rows=req.max_data_rows,
             mode=req.mode,
             custom_sql=req.custom_sql,
+            query_id=query_id,
         )
         send_pdf_via_graph(pdf_path=temp_pdf_path, recipient_email=req.recipient_email)
     except Exception as e:
@@ -301,6 +312,28 @@ def send_report(req: ReportRequest, background_tasks: BackgroundTasks):
         "status": "processing",
         "message": f"Report generation started. An email will be dispatched to {req.recipient_email} shortly.",
     }
+
+
+# --- ENDPOINT 6.5: Custom SQL Query Cache ---
+class CacheQueryRequest(BaseModel):
+    query: str
+
+@app.post("/api/cache-query")
+def cache_query(req: CacheQueryRequest):
+    """Temporarily stores a custom SQL query in memory, returning a query ID for URL params."""
+    if not req.query or not req.query.strip():
+        raise HTTPException(status_code=400, detail="Query cannot be empty")
+    query_id = str(uuid.uuid4())
+    query_cache[query_id] = req.query
+    return {"status": "success", "query_id": query_id}
+
+@app.get("/api/get-cached-query/{query_id}")
+def get_cached_query(query_id: str):
+    """Retrieves a cached custom SQL query by its query ID."""
+    query = query_cache.get(query_id)
+    if not query:
+        raise HTTPException(status_code=404, detail="Query not found or expired")
+    return {"status": "success", "query": query}
 
 
 # --- ENDPOINT 7: Custom SQL Query Sandbox Runner ---
