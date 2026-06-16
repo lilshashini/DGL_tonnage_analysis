@@ -3,6 +3,7 @@ import urllib.parse
 import pandas as pd
 from sqlalchemy import create_engine, text
 from dotenv import load_dotenv
+import requests
 
 load_dotenv()
 
@@ -15,10 +16,47 @@ db_user = os.getenv("DB_USER", "")
 conn_str = f"mssql+pyodbc:///?odbc_connect=DRIVER={{ODBC Driver 17 for SQL Server}};SERVER={db_server};DATABASE={db_name};UID={db_user};PWD={db_pass}"
 engine = create_engine(conn_str)
 
+# On-Prem API endpoint configuration
+ONPREM_API_URL = os.getenv("ONPREM_API_URL", "https://survey.dartglobal.com/chatbot/v1.0/data")
+
+
+def run_query(sql_str: str, params: dict = None) -> pd.DataFrame:
+    """Executes a SQL query either via the On-Prem HTTP API or falls back to direct database engine connection."""
+    # If parameters are passed, format them into the SQL string
+    if params:
+        formatted_sql = sql_str
+        for k, v in params.items():
+            # simple replacement for parameters: ':name' -> 'value' (escaped if string)
+            val_str = f"'{v}'" if isinstance(v, str) else str(v)
+            formatted_sql = formatted_sql.replace(f":{k}", val_str)
+    else:
+        formatted_sql = sql_str
+
+    if ONPREM_API_URL:
+        try:
+            resp = requests.post(ONPREM_API_URL, json={"sql_query": formatted_sql}, timeout=30)
+            if resp.status_code == 200:
+                data = resp.json()
+                if isinstance(data, list):
+                    return pd.DataFrame(data)
+                elif isinstance(data, dict) and "error" in data:
+                    raise Exception(f"API returned error: {data['error']}")
+                else:
+                    return pd.DataFrame(data)
+            else:
+                raise Exception(f"API request failed with status code {resp.status_code}: {resp.text}")
+        except Exception as e:
+            print(f"API Query failed ({e}). Falling back to direct database connection...")
+    
+    with engine.connect() as conn:
+        return pd.read_sql(text(sql_str), conn, params=params)
+
 
 def to_clean_records(df: pd.DataFrame) -> list:
     """Converts a pandas DataFrame to a list of dictionaries, cleaning NaN, Inf, NaT, and <NA> values for JSON compliance."""
     import math
+    if df.empty:
+        return []
     records = df.to_dict(orient="records")
     for r in records:
         for k, v in r.items():
@@ -27,6 +65,7 @@ def to_clean_records(df: pd.DataFrame) -> list:
             elif pd.isna(v):
                 r[k] = None
     return records
+
 
 
 def build_multi_in_clause(column_expr: str, value_str: str, params: dict, param_prefix: str) -> str:
@@ -140,8 +179,7 @@ def get_filtered_data(
         RIGHT(SendingForwarder, 3)
     ORDER BY Total_Revenue DESC
     """
-    with engine.connect() as conn:
-        df = pd.read_sql(text(query), conn, params=params)
+    df = run_query(query, params)
     return to_clean_records(df)
 
 
@@ -175,8 +213,7 @@ def get_countries(start_date: str, end_date: str, company_code: str = None):
       {company_filter}
     ORDER BY vt.ConLoadPortCountryName
     """
-    with engine.connect() as conn:
-        df = pd.read_sql(text(query), conn, params=params)
+    df = run_query(query, params)
     
     countries_list = df["country"].dropna().tolist()
     
@@ -219,8 +256,7 @@ def get_airlines(start_date: str, end_date: str, country: str = None):
       AND (:country IS NULL OR vt.ConLoadPortCountryName = :country)
     ORDER BY vt.AirlineName1
     """
-    with engine.connect() as conn:
-        df = pd.read_sql(text(query), conn, params={"start_date": start_date, "end_date": end_date, "country": country})
+    df = run_query(query, {"start_date": start_date, "end_date": end_date, "country": country})
     return df["airline"].dropna().tolist()
 
 
@@ -304,8 +340,7 @@ def get_weekly_data(
         DATEPART(WEEK, ETD)
     ORDER BY Year, Week
     """
-    with engine.connect() as conn:
-        df = pd.read_sql(text(query), conn, params=params)
+    df = run_query(query, params)
     # Format week label
     df["week_label"] = df.apply(
         lambda r: f"W{int(r['Week'])} '{str(int(r['Year']))[2:]}" if pd.notnull(r["Week"]) else "", axis=1
@@ -392,8 +427,7 @@ def get_monthly_data(
         DATEPART(MONTH, ETD)
     ORDER BY Year, Month
     """
-    with engine.connect() as conn:
-        df = pd.read_sql(text(query), conn, params=params)
+    df = run_query(query, params)
     
     # Add formatted month label e.g. "Jun '25"
     months_names = {
@@ -491,8 +525,7 @@ def get_kpi_summary(
         COUNT(DISTINCT ConLoadPortCountryName) AS Unique_Countries
     FROM FilteredConsols
     """
-    with engine.connect() as conn:
-        df = pd.read_sql(text(query), conn, params=params)
+    df = run_query(query, params)
     records = to_clean_records(df)
     return records[0] if len(records) > 0 else {}
 
@@ -505,8 +538,7 @@ def get_company_codes(start_date: str, end_date: str):
     WHERE DGL_Company IS NOT NULL AND DGL_CompanyName IS NOT NULL
     ORDER BY DGL_Company
     """
-    with engine.connect() as conn:
-        df = pd.read_sql(text(query), conn)
+    df = run_query(query)
     return to_clean_records(df)
 
 
@@ -549,8 +581,7 @@ def get_branches(company_code: str = None):
             query += " AND CountryCode = 'US'"
             
     query += " ORDER BY BranchCode"
-    with engine.connect() as conn:
-        df = pd.read_sql(text(query), conn)
+    df = run_query(query)
     return to_clean_records(df)
 
 
@@ -565,8 +596,7 @@ def get_origin_cities(start_date: str, end_date: str, country: str = None):
       AND (:country IS NULL OR vt.ConLoadPortCountryName = :country)
     ORDER BY vt.ConLoadPortCity
     """
-    with engine.connect() as conn:
-        df = pd.read_sql(text(query), conn, params={"start_date": start_date, "end_date": end_date, "country": country})
+    df = run_query(query, {"start_date": start_date, "end_date": end_date, "country": country})
     return df["city"].dropna().tolist()
 
 
@@ -580,8 +610,7 @@ def get_destination_countries(start_date: str, end_date: str):
       AND vt.ConDischargePortCountryName IS NOT NULL
     ORDER BY vt.ConDischargePortCountryName
     """
-    with engine.connect() as conn:
-        df = pd.read_sql(text(query), conn, params={"start_date": start_date, "end_date": end_date})
+    df = run_query(query, {"start_date": start_date, "end_date": end_date})
     return df["country"].dropna().tolist()
 
 
@@ -596,8 +625,7 @@ def get_destination_cities(start_date: str, end_date: str, country: str = None):
       AND (:country IS NULL OR vt.ConDischargePortCountryName = :country)
     ORDER BY vt.ConDischargePortCity
     """
-    with engine.connect() as conn:
-        df = pd.read_sql(text(query), conn, params={"start_date": start_date, "end_date": end_date, "country": country})
+    df = run_query(query, {"start_date": start_date, "end_date": end_date, "country": country})
     return df["city"].dropna().tolist()
 
 
@@ -626,10 +654,7 @@ def execute_custom_query(sql_str: str):
             raise ValueError(f"Query sandbox does not allow {keyword} operations. This is a read-only query execution environment.")
     
     try:
-        with engine.connect() as conn:
-            # Execute query and read results
-            df = pd.read_sql(text(sql_str), conn)
-        
+        df = run_query(sql_str)
         return to_clean_records(df)
     except Exception as e:
         # Re-raise with more context
