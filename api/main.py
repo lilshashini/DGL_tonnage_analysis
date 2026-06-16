@@ -907,6 +907,5 @@ def api_delete_schedule(schedule_id: str):
 if __name__ == "__main__":
     import uvicorn
     import os
-    port = int(os.environ.get("PORT", 8000))
-    is_dev = os.environ.get("PORT") is None
-    uvicorn.run("api.main:app", host="0.0.0.0", port=port, reload=is_dev)
+    port = int(os.environ.get("PORT", 8080))
+    uvicorn.run("api.main:app", host="0.0.0.0", port=port)
