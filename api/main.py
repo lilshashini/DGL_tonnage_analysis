@@ -487,11 +487,19 @@ def send_report(req: ReportRequest, background_tasks: BackgroundTasks):
     """Accepts filters and an email address, then triggers Playwright and MS Graph API."""
     if not req.recipient_email:
         raise HTTPException(status_code=400, detail="Recipient email is required.")
+    
+    if os.environ.get("VERCEL"):
+        raise HTTPException(
+            status_code=400,
+            detail="PDF generation and email dispatch are not supported on Vercel serverless functions (Playwright Chromium binaries cannot be run). Please host your backend on Render, Railway, or a VPS to use email capabilities."
+        )
+        
     background_tasks.add_task(process_pdf_and_email, req)
     return {
         "status": "processing",
         "message": f"Report generation started. An email will be dispatched to {req.recipient_email} shortly.",
     }
+
 
 
 # --- ENDPOINT 6.5: Custom SQL Query Cache ---
@@ -869,11 +877,18 @@ def api_run_schedule_manually(schedule_id: str, background_tasks: BackgroundTask
     if not config:
         raise HTTPException(status_code=404, detail="Schedule not found")
         
+    if os.environ.get("VERCEL"):
+        raise HTTPException(
+            status_code=400,
+            detail="Scheduled report execution is not supported on Vercel because Playwright Chromium is unavailable in serverless environments. Please deploy on Render or a VPS to use email capabilities."
+        )
+        
     try:
         background_tasks.add_task(execute_scheduled_report_job, schedule_id)
         return {"status": "success", "message": "Report generation and email dispatch started."}
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
+
 
 
 @app.delete("/api/schedules/{schedule_id}")

@@ -32,11 +32,18 @@ def run_query(sql_str: str, params: dict = None) -> pd.DataFrame:
     if params:
         formatted_sql = sql_str
         for k, v in params.items():
-            # simple replacement for parameters: ':name' -> 'value' (escaped if string)
-            val_str = f"'{v}'" if isinstance(v, str) else str(v)
+            if v is None:
+                val_str = "NULL"
+            elif isinstance(v, str):
+                # Escape single quotes in string parameter values to prevent syntax errors
+                escaped_v = v.replace("'", "''")
+                val_str = f"'{escaped_v}'"
+            else:
+                val_str = str(v)
             formatted_sql = formatted_sql.replace(f":{k}", val_str)
     else:
         formatted_sql = sql_str
+
 
     if ONPREM_API_URL:
         try:
