@@ -8,6 +8,8 @@ if sys.platform == 'win32':
 import uuid
 from fastapi import FastAPI, HTTPException, BackgroundTasks
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.staticfiles import StaticFiles
+from fastapi.responses import FileResponse, JSONResponse
 from pydantic import BaseModel
 from typing import Optional
 from dotenv import load_dotenv
@@ -59,6 +61,30 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+# --- SERVE NEXT.JS STATIC EXPORT ---
+# The Dockerfile builds the frontend into /app/frontend_build
+# FastAPI mounts it so the dashboard is accessible at the root URL.
+_FRONTEND_BUILD = os.path.join(os.path.dirname(__file__), "..", "frontend_build")
+_FRONTEND_BUILD = os.path.normpath(_FRONTEND_BUILD)
+
+@app.get("/", include_in_schema=False)
+def serve_root():
+    """Serves the Next.js index.html at the root URL."""
+    index = os.path.join(_FRONTEND_BUILD, "index.html")
+    if os.path.exists(index):
+        return FileResponse(index)
+    return JSONResponse({"message": "Backend API is running. Frontend build not found."})
+
+@app.get("/print-view", include_in_schema=False)
+@app.get("/print-view/", include_in_schema=False)
+def serve_print_view():
+    """Serves the print-view page."""
+    page = os.path.join(_FRONTEND_BUILD, "print-view", "index.html")
+    if os.path.exists(page):
+        return FileResponse(page)
+    return JSONResponse({"error": "print-view not found"}, status_code=404)
+
 
 # --- DATA MODELS ---
 class ReportRequest(BaseModel):
@@ -902,6 +928,19 @@ def api_delete_schedule(schedule_id: str):
         return {"status": "success", "message": "Schedule deleted successfully"}
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
+
+
+# --- MOUNT STATIC FILES (must be after all API routes) ---
+# Serves Next.js _next/static bundles, images, etc.
+if os.path.exists(_FRONTEND_BUILD):
+    # Mount _next directory for chunks/CSS/JS
+    _next_dir = os.path.join(_FRONTEND_BUILD, "_next")
+    if os.path.exists(_next_dir):
+        app.mount("/_next", StaticFiles(directory=_next_dir), name="nextjs_assets")
+    # Mount images and other public assets
+    app.mount("/images", StaticFiles(directory=os.path.join(_FRONTEND_BUILD, "images")), name="images") if os.path.exists(os.path.join(_FRONTEND_BUILD, "images")) else None
+    # Mount everything else (favicon, etc.)
+    app.mount("/static_root", StaticFiles(directory=_FRONTEND_BUILD), name="static_root")
 
 
 # --- RUNNER FOR DEVELOPMENT ---

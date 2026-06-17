@@ -20,9 +20,11 @@ import {
   SelectLabel, SelectTrigger, SelectValue,
 } from "@/components/ui/select";
 
-const API = process.env.NEXT_PUBLIC_API_URL || 
+// In production: frontend & backend share the same Cloud Run host → use relative URLs.
+// In local dev: Next.js runs on :3000, backend on :8000 → use absolute localhost URL.
+const API = process.env.NEXT_PUBLIC_API_URL ||
   (typeof window !== "undefined" && window.location.hostname !== "localhost" && window.location.hostname !== "127.0.0.1"
-    ? "https://air-freight-tonnage-dashboard-237872233437.europe-west1.run.app"
+    ? ""   // Empty string = relative URL (same host as the page)
     : "http://localhost:8000");
 
 
