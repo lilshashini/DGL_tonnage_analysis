@@ -18,4 +18,4 @@ RUN pip install --no-cache-dir -r requirements.txt
 COPY . .
 
 # Start your Python application
-CMD ["python", "api/main.py"]
+CMD uvicorn api.main:app --host 0.0.0.0 --port $PORT
