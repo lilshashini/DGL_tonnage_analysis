@@ -1257,7 +1257,7 @@ def api_toggle_schedule(schedule_id: str, current_user: dict = Depends(get_curre
 @app.post("/api/schedules/{schedule_id}/run")
 def api_run_schedule_manually(
     schedule_id: str,
-    x_scheduler_token: Optional[str] = None,
+    x_scheduler_token: Optional[str] = Header(None),
     authorization: Optional[str] = Header(None),
 ):
     """
