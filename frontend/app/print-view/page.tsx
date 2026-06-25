@@ -90,27 +90,27 @@ const parseWeeklyData = (rows: any[]) => {
       const date = new Date(etdVal);
       if (isNaN(date.getTime())) return;
 
-      const day = date.getDay();
-      const diff = date.getDate() - day + (day === 0 ? -6 : 1);
-      const monday = new Date(date.setDate(diff));
-      const weekStr = monday.toISOString().slice(0, 10);
+      const day = date.getUTCDay();
+      const diff = date.getUTCDate() - day + (day === 0 ? -6 : 1);
+      const monday = new Date(Date.UTC(date.getUTCFullYear(), date.getUTCMonth(), diff));
+      const weekStr = `${monday.getUTCFullYear()}-${String(monday.getUTCMonth() + 1).padStart(2, '0')}-${String(monday.getUTCDate()).padStart(2, '0')}`;
 
-      const tempDate = new Date(date.valueOf());
-      tempDate.setHours(0, 0, 0, 0);
-      tempDate.setDate(tempDate.getDate() + 3 - (tempDate.getDay() + 6) % 7);
-      const week1 = new Date(tempDate.getFullYear(), 0, 4);
-      const weekNum = 1 + Math.round(((tempDate.valueOf() - week1.valueOf()) / 86400000 - 3 + (week1.getDay() + 6) % 7) / 7);
+      const tempDate = new Date(monday.valueOf());
+      tempDate.setUTCHours(0, 0, 0, 0);
+      tempDate.setUTCDate(tempDate.getUTCDate() + 3 - (tempDate.getUTCDay() + 6) % 7);
+      const week1 = new Date(Date.UTC(tempDate.getUTCFullYear(), 0, 4));
+      const weekNum = 1 + Math.round(((tempDate.valueOf() - week1.valueOf()) / 86400000 - 3 + (tempDate.getUTCDay() + 6) % 7) / 7);
 
       const key = weekStr;
       if (!weeklyMap[key]) {
         weeklyMap[key] = {
-          Year: date.getFullYear(),
+          Year: date.getUTCFullYear(),
           Week: weekNum,
           Week_Start: weekStr,
           Total_Tonnage: 0,
           Total_Revenue: 0,
           Total_Shipments: 0,
-          week_label: `W${weekNum} '${String(date.getFullYear()).slice(-2)}`,
+          week_label: `W${weekNum} '${String(date.getUTCFullYear()).slice(-2)}`,
         };
       }
       weeklyMap[key].Total_Tonnage += Number(r.Total_Tonnage ?? r.Tonnage_Chargeable ?? r.Air_ChargebleWeight ?? r.tonnage ?? 0);
@@ -162,8 +162,8 @@ const parseMonthlyData = (rows: any[]) => {
       if (!etdVal) return;
       const date = new Date(etdVal);
       if (isNaN(date.getTime())) return;
-      const yr = date.getFullYear();
-      const mo = date.getMonth() + 1;
+      const yr = date.getUTCFullYear();
+      const mo = date.getUTCMonth() + 1;
       const key = `${yr}-${mo}`;
       if (!monthlyMap[key]) {
         monthlyMap[key] = {
@@ -495,12 +495,11 @@ function PrintViewContent() {
       if (!etdVal) return;
       const date = new Date(etdVal);
       if (isNaN(date.getTime())) return;
-      const td = new Date(date.valueOf());
-      td.setHours(0, 0, 0, 0);
-      td.setDate(td.getDate() + 3 - (td.getDay() + 6) % 7);
-      const w1 = new Date(td.getFullYear(), 0, 4);
-      const wn = 1 + Math.round(((td.valueOf() - w1.valueOf()) / 86400000 - 3 + (w1.getDay() + 6) % 7) / 7);
-      const yr = date.getFullYear();
+      const td = new Date(Date.UTC(date.getUTCFullYear(), date.getUTCMonth(), date.getUTCDate()));
+      td.setUTCDate(td.getUTCDate() + 3 - (td.getUTCDay() + 6) % 7);
+      const w1 = new Date(Date.UTC(td.getUTCFullYear(), 0, 4));
+      const wn = 1 + Math.round(((td.valueOf() - w1.valueOf()) / 86400000 - 3 + (w1.getUTCDay() + 6) % 7) / 7);
+      const yr = date.getUTCFullYear();
       const sk = `${yr}-${String(wn).padStart(2, '0')}`;
       if (!weekSet.has(sk)) weekSet.set(sk, `W${wn}'${String(yr).slice(-2)}`);
     });
@@ -518,12 +517,11 @@ function PrintViewContent() {
       if (!etdVal) return;
       const date = new Date(etdVal);
       if (isNaN(date.getTime())) return;
-      const td = new Date(date.valueOf());
-      td.setHours(0, 0, 0, 0);
-      td.setDate(td.getDate() + 3 - (td.getDay() + 6) % 7);
-      const w1 = new Date(td.getFullYear(), 0, 4);
-      const wn = 1 + Math.round(((td.valueOf() - w1.valueOf()) / 86400000 - 3 + (w1.getDay() + 6) % 7) / 7);
-      const yr = date.getFullYear();
+      const td = new Date(Date.UTC(date.getUTCFullYear(), date.getUTCMonth(), date.getUTCDate()));
+      td.setUTCDate(td.getUTCDate() + 3 - (td.getUTCDay() + 6) % 7);
+      const w1 = new Date(Date.UTC(td.getUTCFullYear(), 0, 4));
+      const wn = 1 + Math.round(((td.valueOf() - w1.valueOf()) / 86400000 - 3 + (w1.getUTCDay() + 6) % 7) / 7);
+      const yr = date.getUTCFullYear();
       const sk = `${yr}-${String(wn).padStart(2, '0')}`;
       const wIdx = weekSortKeys.indexOf(sk);
       if (wIdx === -1) return;
@@ -548,12 +546,11 @@ function PrintViewContent() {
       if (!etdVal) return;
       const date = new Date(etdVal);
       if (isNaN(date.getTime())) return;
-      const td = new Date(date.valueOf());
-      td.setHours(0, 0, 0, 0);
-      td.setDate(td.getDate() + 3 - (td.getDay() + 6) % 7);
-      const w1 = new Date(td.getFullYear(), 0, 4);
-      const wn = 1 + Math.round(((td.valueOf() - w1.valueOf()) / 86400000 - 3 + (w1.getDay() + 6) % 7) / 7);
-      const yr = date.getFullYear();
+      const td = new Date(Date.UTC(date.getUTCFullYear(), date.getUTCMonth(), date.getUTCDate()));
+      td.setUTCDate(td.getUTCDate() + 3 - (td.getUTCDay() + 6) % 7);
+      const w1 = new Date(Date.UTC(td.getUTCFullYear(), 0, 4));
+      const wn = 1 + Math.round(((td.valueOf() - w1.valueOf()) / 86400000 - 3 + (w1.getUTCDay() + 6) % 7) / 7);
+      const yr = date.getUTCFullYear();
       const sk = `${yr}-${String(wn).padStart(2, '0')}`;
       if (!weekSet.has(sk)) weekSet.set(sk, `W${wn}'${String(yr).slice(-2)}`);
     });
@@ -626,9 +623,9 @@ function PrintViewContent() {
       if (!etdVal) return;
       const date = new Date(etdVal);
       if (isNaN(date.getTime())) return;
-      const dateStr = date.toISOString().slice(0, 10);
+      const dateStr = `${date.getUTCFullYear()}-${String(date.getUTCMonth() + 1).padStart(2, '0')}-${String(date.getUTCDate()).padStart(2, '0')}`;
       const dayNames = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
-      const label = `${dayNames[date.getDay()]} ${date.getDate()}/${date.getMonth() + 1}`;
+      const label = `${dayNames[date.getUTCDay()]} ${date.getUTCDate()}/${date.getUTCMonth() + 1}`;
 
       const carrier = r.Airline ?? r.AirlineName1 ?? r.carrier ?? "Unknown Carrier";
       const ton = Number(r.Total_Tonnage ?? r.Tonnage_Chargeable ?? r.Air_ChargebleWeight ?? r.tonnage ?? 0);
@@ -680,8 +677,8 @@ function PrintViewContent() {
         const minD = new Date(Math.min(...dates.map(d => d.getTime())));
         const maxD = new Date(Math.max(...dates.map(d => d.getTime())));
         const pad = (n: number) => String(n).padStart(2, '0');
-        startStr = `${minD.getFullYear()}-${pad(minD.getMonth() + 1)}-${pad(minD.getDate())}`;
-        endStr = `${maxD.getFullYear()}-${pad(maxD.getMonth() + 1)}-${pad(maxD.getDate())}`;
+        startStr = `${minD.getUTCFullYear()}-${pad(minD.getUTCMonth() + 1)}-${pad(minD.getUTCDate())}`;
+        endStr = `${maxD.getUTCFullYear()}-${pad(maxD.getUTCMonth() + 1)}-${pad(maxD.getUTCDate())}`;
       }
     }
 
@@ -690,24 +687,24 @@ function PrintViewContent() {
 
     if (!isNaN(start.getTime()) && !isNaN(end.getTime())) {
       const current = new Date(start);
-      current.setHours(12, 0, 0, 0);
+      current.setUTCHours(12, 0, 0, 0);
       const last = new Date(end);
-      last.setHours(12, 0, 0, 0);
+      last.setUTCHours(12, 0, 0, 0);
 
       // Limit range generation to a maximum of 31 days to prevent chart overflow
       let iterations = 0;
       while (current <= last && iterations < 31) {
-        const dateStr = current.toISOString().slice(0, 10);
+        const dateStr = `${current.getUTCFullYear()}-${String(current.getUTCMonth() + 1).padStart(2, '0')}-${String(current.getUTCDate()).padStart(2, '0')}`;
         if (!dayMap[dateStr]) {
           const dayNames = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
-          const label = `${dayNames[current.getDay()]} ${current.getDate()}/${current.getMonth() + 1}`;
+          const label = `${dayNames[current.getUTCDay()]} ${current.getUTCDate()}/${current.getUTCMonth() + 1}`;
           dayMap[dateStr] = { date_label: label, sortKey: dateStr };
           topAirlines.forEach((airlineName) => {
             dayMap[dateStr][airlineName] = 0;
           });
           dayMap[dateStr]["Others"] = 0;
         }
-        current.setDate(current.getDate() + 1);
+        current.setUTCDate(current.getUTCDate() + 1);
         iterations++;
       }
     }
@@ -737,13 +734,12 @@ function PrintViewContent() {
       if (etdVal) {
         const date = new Date(etdVal);
         if (isNaN(date.getTime())) return;
-        recordMonth = date.getMonth() + 1;
-        const td = new Date(date.valueOf());
-        td.setHours(0, 0, 0, 0);
-        td.setDate(td.getDate() + 3 - (td.getDay() + 6) % 7);
-        const w1 = new Date(td.getFullYear(), 0, 4);
-        const wn = 1 + Math.round(((td.valueOf() - w1.valueOf()) / 86400000 - 3 + (w1.getDay() + 6) % 7) / 7);
-        const yr = date.getFullYear();
+        recordMonth = date.getUTCMonth() + 1;
+        const td = new Date(Date.UTC(date.getUTCFullYear(), date.getUTCMonth(), date.getUTCDate()));
+        td.setUTCDate(td.getUTCDate() + 3 - (td.getUTCDay() + 6) % 7);
+        const w1 = new Date(Date.UTC(td.getUTCFullYear(), 0, 4));
+        const wn = 1 + Math.round(((td.valueOf() - w1.valueOf()) / 86400000 - 3 + (w1.getUTCDay() + 6) % 7) / 7);
+        const yr = date.getUTCFullYear();
         sortKey = `${yr}-${String(wn).padStart(2, '0')}`;
         weekLabel = `W${wn} '${String(yr).slice(-2)}`;
       } else {
@@ -821,7 +817,7 @@ function PrintViewContent() {
   const CustomXAxisTick = (props: any) => {
     const { x, y, payload } = props;
     const value = payload.value;
-    
+
     if (reportType === "monthly") {
       const index = weeklyStackedAirlineData.findIndex(item => item.week_label === value);
       if (index !== -1) {
@@ -862,6 +858,7 @@ function PrintViewContent() {
       }
     }
 
+    const isRotated = reportType !== "monthly" && dailyStackedAirlineData.length > 8;
     return (
       <g transform={`translate(${x},${y})`}>
         <text
@@ -871,7 +868,8 @@ function PrintViewContent() {
           fill="#4A5568"
           fontSize={13.5}
           fontWeight={650}
-          textAnchor="middle"
+          textAnchor={isRotated ? "end" : "middle"}
+          transform={isRotated ? "rotate(-35)" : undefined}
         >
           {value}
         </text>
@@ -1159,7 +1157,7 @@ function PrintViewContent() {
                     <ResponsiveContainer width="100%" height="100%">
                       <BarChart
                         data={reportType === "monthly" ? weeklyStackedAirlineData : dailyStackedAirlineData}
-                        margin={{ top: 5, right: 10, left: 4, bottom: reportType === "monthly" ? 25 : ((reportType === "monthly" ? weeklyStackedAirlineData : dailyStackedAirlineData).length > 10 ? 15 : 5) }}
+                        margin={{ top: 25, right: 10, left: 4, bottom: reportType === "monthly" ? 25 : ((reportType === "monthly" ? weeklyStackedAirlineData : dailyStackedAirlineData).length > 8 ? 35 : 5) }}
                       >
                         <CartesianGrid strokeDasharray="3 3" stroke="#EDF2F7" vertical={false} horizontal={true} />
                         <XAxis
@@ -1429,7 +1427,7 @@ function PrintViewContent() {
               {/* Row 3: Route Distribution Trade Routes by Tonnage (Top 5 + Others) */}
               <div className="border border-slate-200 rounded-xl p-6 bg-white shadow-sm flex flex-row items-center justify-between h-[540px] gap-12 mt-6 flex-1">
                 <div className="flex flex-col justify-between h-full shrink-0 w-[350px]">
-                  <span className="text-lg uppercase tracking-wider font-bold text-slate-400">Trade Routes by Tonnage (Top 5 + Others)</span>
+                  <span className="text-lg uppercase tracking-wider font-bold text-slate-400">Trade Routes by Tonnage (Top 5)</span>
                   <div className="relative h-[430px] w-full flex items-center justify-center mt-4">
                     <ResponsiveContainer width="100%" height="100%">
                       <PieChart>
@@ -1661,7 +1659,7 @@ function PrintViewContent() {
                   {mode === "custom-sql" ? "Airline Performance Summary — Top 10" : "Weekly Carrier Ledger"}
                 </span>
                 <span className="text-[14px] text-slate-400 font-bold">
-                  {mode === "custom-sql" ? "Top 10 Airlines + Others" : `All Carrier Records (${data.length})`}
+                  {mode === "custom-sql" ? "Top 10 Airlines" : `All Carrier Records (${data.length})`}
                 </span>
               </div>
               <div>

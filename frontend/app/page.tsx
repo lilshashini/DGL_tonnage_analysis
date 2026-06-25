@@ -27,8 +27,8 @@ const API = process.env.NEXT_PUBLIC_API_URL ||
   (typeof window !== "undefined" && window.location.hostname !== "localhost" && window.location.hostname !== "127.0.0.1"
     ? ""   // Empty string = relative URL (same host as the page)
     : (typeof window !== "undefined" && (window.location.port === "3000" || window.location.port === "3001")
-        ? "http://localhost:8000"
-        : ""));
+      ? "http://localhost:8000"
+      : ""));
 
 
 // Formatting helpers matching the clean image style
@@ -246,7 +246,7 @@ function MultiSelect({
 
 export default function Dashboard() {
   // Sidebar active section
-  const [activeSection, setActiveSection] = useState<"dashboard" | "weekly-reports" | "monthly-reports" | "admin" | "email-scheduling">("dashboard");
+  const [activeSection, setActiveSection] = useState<"dashboard" | "weekly-reports" | "monthly-reports" | "admin" | "email-scheduling" | "users">("dashboard");
 
   // --- AUTH GATE STATES ---
   const [supabase, setSupabase] = useState<any>(null);
@@ -470,6 +470,30 @@ export default function Dashboard() {
 
   useEffect(() => { fetchRecipients(); }, [fetchRecipients]);
 
+  // --- DB USERS FROM SUPABASE ---
+  const [dbUsers, setDbUsers] = useState<any[]>([]);
+  const [dbUsersLoading, setDbUsersLoading] = useState(false);
+
+  const fetchDbUsers = useCallback(async (client?: any) => {
+    const supabaseClient = client || supabase;
+    if (!supabaseClient) return;
+    setDbUsersLoading(true);
+    try {
+      const { data, error } = await supabaseClient
+        .from("users")
+        .select("*")
+        .order("created_at", { ascending: false });
+      if (error) {
+        console.error("Error fetching db users:", error);
+      } else {
+        setDbUsers(data || []);
+      }
+    } catch (err) {
+      console.error("Failed to fetch db users:", err);
+    } finally {
+      setDbUsersLoading(false);
+    }
+  }, [supabase]);
   // --- ORG USERS FROM AZURE AD ---
   const [orgUsers, setOrgUsers] = useState<any[]>([]);
   const [orgUsersByDept, setOrgUsersByDept] = useState<Record<string, any[]>>({});
@@ -487,6 +511,41 @@ export default function Dashboard() {
   const [expandedStation, setExpandedStation] = useState<Record<string, boolean>>({});
   const [adminTab, setAdminTab] = useState<"stations" | "global">("stations");
   const [stationCustomEmailInput, setStationCustomEmailInput] = useState<Record<string, string>>({});
+  const [stationUserSearch, setStationUserSearch] = useState<Record<string, string>>({});
+
+  // Synchronize database users to station selected emails
+  useEffect(() => {
+    if (dbUsers.length > 0) {
+      setStationSelectedEmails((prev) => {
+        const updated = { ...prev };
+        const stationGroups: Record<string, string[]> = {};
+        dbUsers.forEach((u) => {
+          if (u.station) {
+            if (!stationGroups[u.station]) {
+              stationGroups[u.station] = [];
+            }
+            if (!stationGroups[u.station].includes(u.email)) {
+              stationGroups[u.station].push(u.email);
+            }
+          }
+        });
+
+        STATIONS.forEach((s) => {
+          if (stationGroups[s.code]) {
+            updated[s.code] = stationGroups[s.code];
+          } else if (!updated[s.code] && stationDefaultRecipients[s.code]) {
+            updated[s.code] = stationDefaultRecipients[s.code];
+          }
+        });
+
+        if (stationGroups["OTHER"]) {
+          updated["OTHER"] = stationGroups["OTHER"];
+        }
+
+        return updated;
+      });
+    }
+  }, [dbUsers, stationDefaultRecipients]);
 
   // --- SCHEDULER STATES ---
   const [schedules, setSchedules] = useState<any[]>([]);
@@ -722,12 +781,13 @@ export default function Dashboard() {
     }
   }, [orgUsers.length]);
 
-  // Fetch org users, station recipients, and schedules when admin/email-scheduling section is activated
+  // Fetch org users, station recipients, and schedules when admin/email-scheduling/users section is activated
   useEffect(() => {
-    if ((activeSection === "admin" || activeSection === "email-scheduling") && supabase) {
+    if ((activeSection === "admin" || activeSection === "email-scheduling" || activeSection === "users") && supabase) {
       fetchOrgUsers();
       fetchStationRecipients();
       fetchSchedules(supabase);
+      fetchDbUsers(supabase);
     }
   }, [activeSection, supabase]); // eslint-disable-line react-hooks/exhaustive-deps
 
@@ -765,8 +825,8 @@ SELECT
     vt.ETD,
     COALESCE(vt.RealLoadPortCountryName, 'N/A') AS Origin_Country,
     COALESCE(vt.RealLoadPortCity, 'N/A') AS Origin_City,
-    COALESCE(vt.RealDisChargePortCountryName, 'N/A') AS Destination_City,
-    COALESCE(vt.RealDisChargePortCity, 'N/A') AS Destination_Country,
+    COALESCE(vt.RealDisChargePortCountryName, 'N/A') AS Destination_Country,
+    COALESCE(vt.RealDisChargePortCity, 'N/A') AS Destination_City,
     COALESCE(MAX(vs.Company), 'Unlinked') AS Company_Code,
     COUNT(DISTINCT vs.ShipmentNumber) AS Total_Shipments,
     ROUND(MAX(vt.Air_ChargebleWeight), 2) AS Tonnage_Chargeable,
@@ -814,8 +874,8 @@ SELECT
     vt.ETD,
     COALESCE(vt.RealLoadPortCountryName, 'N/A') AS Origin_Country,
     COALESCE(vt.RealLoadPortCity, 'N/A') AS Origin_City,
-    COALESCE(vt.RealDisChargePortCountryName, 'N/A') AS Destination_City,
-    COALESCE(vt.RealDisChargePortCity, 'N/A') AS Destination_Country,
+    COALESCE(vt.RealDisChargePortCountryName, 'N/A') AS Destination_Country,
+    COALESCE(vt.RealDisChargePortCity, 'N/A') AS Destination_City,
     COALESCE(MAX(vs.Company), 'Unlinked') AS Company_Code,
     COUNT(DISTINCT vs.ShipmentNumber) AS Total_Shipments,
     ROUND(MAX(vt.Air_ChargebleWeight), 2) AS Tonnage_Chargeable,
@@ -886,27 +946,27 @@ ORDER BY vt.ETD DESC, ROUND(SUM(vs.Revenue_USD), 2) DESC`);
         const date = new Date(etdVal);
         if (isNaN(date.getTime())) return;
 
-        const day = date.getDay();
-        const diff = date.getDate() - day + (day === 0 ? -6 : 1);
-        const monday = new Date(date.setDate(diff));
-        const weekStr = monday.toISOString().slice(0, 10);
+        const day = date.getUTCDay();
+        const diff = date.getUTCDate() - day + (day === 0 ? -6 : 1);
+        const monday = new Date(Date.UTC(date.getUTCFullYear(), date.getUTCMonth(), diff));
+        const weekStr = `${monday.getUTCFullYear()}-${String(monday.getUTCMonth() + 1).padStart(2, '0')}-${String(monday.getUTCDate()).padStart(2, '0')}`;
 
-        const tempDate = new Date(date.valueOf());
-        tempDate.setHours(0, 0, 0, 0);
-        tempDate.setDate(tempDate.getDate() + 3 - (tempDate.getDay() + 6) % 7);
-        const week1 = new Date(tempDate.getFullYear(), 0, 4);
-        const weekNum = 1 + Math.round(((tempDate.valueOf() - week1.valueOf()) / 86400000 - 3 + (week1.getDay() + 6) % 7) / 7);
+        const tempDate = new Date(monday.valueOf());
+        tempDate.setUTCHours(0, 0, 0, 0);
+        tempDate.setUTCDate(tempDate.getUTCDate() + 3 - (tempDate.getUTCDay() + 6) % 7);
+        const week1 = new Date(Date.UTC(tempDate.getUTCFullYear(), 0, 4));
+        const weekNum = 1 + Math.round(((tempDate.valueOf() - week1.valueOf()) / 86400000 - 3 + (tempDate.getUTCDay() + 6) % 7) / 7);
 
         const key = weekStr;
         if (!weeklyMap[key]) {
           weeklyMap[key] = {
-            Year: date.getFullYear(),
+            Year: date.getUTCFullYear(),
             Week: weekNum,
             Week_Start: weekStr,
             Total_Tonnage: 0,
             Total_Revenue: 0,
             Total_Shipments: 0,
-            week_label: `W${weekNum} '${String(date.getFullYear()).slice(-2)}`,
+            week_label: `W${weekNum} '${String(date.getUTCFullYear()).slice(-2)}`,
           };
         }
         weeklyMap[key].Total_Tonnage += Number(r.Total_Tonnage ?? r.Tonnage_Chargeable ?? r.Air_ChargebleWeight ?? r.tonnage ?? 0);
@@ -958,8 +1018,8 @@ ORDER BY vt.ETD DESC, ROUND(SUM(vs.Revenue_USD), 2) DESC`);
         if (!etdVal) return;
         const date = new Date(etdVal);
         if (isNaN(date.getTime())) return;
-        const yr = date.getFullYear();
-        const mo = date.getMonth() + 1;
+        const yr = date.getUTCFullYear();
+        const mo = date.getUTCMonth() + 1;
         const key = `${yr}-${mo}`;
         if (!monthlyMap[key]) {
           monthlyMap[key] = {
@@ -1405,12 +1465,12 @@ SELECT
     vt.ETD,
     COALESCE(vt.RealLoadPortCountryName, 'N/A') AS Origin_Country,
     COALESCE(vt.RealLoadPortCity, 'N/A') AS Origin_City,
-    COALESCE(vt.RealDisChargePortCountryName, 'N/A') AS Destination_City,
-    COALESCE(vt.RealDisChargePortCity, 'N/A') AS Destination_Country,
+    COALESCE(vt.RealDisChargePortCountryName, 'N/A') AS Destination_Country,
+    COALESCE(vt.RealDisChargePortCity, 'N/A') AS Destination_City,
     COALESCE(MAX(vs.Company), 'Unlinked') AS Company_Code,
     COUNT(DISTINCT vs.ShipmentNumber) AS Total_Shipments,
-    ROUND(SUM(vt.Air_ChargebleWeight), 2) AS Tonnage_Chargeable,
-    ROUND(SUM(vt.Air_ActualWeight), 2) AS Tonnage_Actual,
+    ROUND(MAX(vt.Air_ChargebleWeight), 2) AS Tonnage_Chargeable,
+    ROUND(MAX(vt.Air_ActualWeight), 2) AS Tonnage_Actual,
     ROUND(SUM(vs.Revenue_USD), 2) AS Revenue_USD,
     ROUND(SUM(vs.Cost_USD), 2) AS Cost_USD,
     ROUND(SUM(vs.Profit_USD), 2) AS Profit_USD,
@@ -1444,12 +1504,12 @@ SELECT
     vt.ETD,
     COALESCE(vt.RealLoadPortCountryName, 'N/A') AS Origin_Country,
     COALESCE(vt.RealLoadPortCity, 'N/A') AS Origin_City,
-    COALESCE(vt.RealDisChargePortCountryName, 'N/A') AS Destination_City,
-    COALESCE(vt.RealDisChargePortCity, 'N/A') AS Destination_Country,
+    COALESCE(vt.RealDisChargePortCountryName, 'N/A') AS Destination_Country,
+    COALESCE(vt.RealDisChargePortCity, 'N/A') AS Destination_City,
     COALESCE(MAX(vs.Company), 'Unlinked') AS Company_Code,
     COUNT(DISTINCT vs.ShipmentNumber) AS Total_Shipments,
-    ROUND(SUM(vt.Air_ChargebleWeight), 2) AS Tonnage_Chargeable,
-    ROUND(SUM(vt.Air_ActualWeight), 2) AS Tonnage_Actual,
+    ROUND(MAX(vt.Air_ChargebleWeight), 2) AS Tonnage_Chargeable,
+    ROUND(MAX(vt.Air_ActualWeight), 2) AS Tonnage_Actual,
     ROUND(SUM(vs.Revenue_USD), 2) AS Revenue_USD,
     ROUND(SUM(vs.Cost_USD), 2) AS Cost_USD,
     ROUND(SUM(vs.Profit_USD), 2) AS Profit_USD,
@@ -1527,6 +1587,71 @@ ORDER BY vt.ETD DESC, ROUND(SUM(vs.Revenue_USD), 2) DESC;
       ...prev,
       [stationCode]: "",
     }));
+  };
+
+  const handleSaveStationRecipients = async (stationCode: string) => {
+    if (!supabase) return;
+    const emails = stationSelectedEmails[stationCode] || [];
+    setStationEmailLoading(prev => ({ ...prev, [stationCode]: true }));
+    setStationEmailStatus(prev => ({ ...prev, [stationCode]: "Saving recipients..." }));
+    setStationEmailSuccess(prev => ({ ...prev, [stationCode]: null }));
+
+    try {
+      const currentDbUsers = dbUsers.filter(u => u.station === stationCode);
+      const currentDbEmails = currentDbUsers.map(u => u.email);
+      const emailsToRemove = currentDbEmails.filter(e => !emails.includes(e));
+      const emailsToUpsert = emails;
+
+      for (const email of emailsToRemove) {
+        const user = dbUsers.find(u => u.email === email);
+        if (user) {
+          const { error } = await supabase
+            .from("users")
+            .update({ station: "Global" })
+            .eq("email", email);
+          if (error) console.error("Error removing user from station:", error);
+        }
+      }
+
+      for (const email of emailsToUpsert) {
+        const existingUser = dbUsers.find(u => u.email === email);
+        const displayName = orgUsers.find(u => u.email === email)?.displayName || email.split("@")[0];
+
+        if (existingUser) {
+          const { error } = await supabase
+            .from("users")
+            .update({ station: stationCode, display_name: displayName })
+            .eq("email", email);
+          if (error) throw error;
+        } else {
+          const newId = crypto.randomUUID ? crypto.randomUUID() : 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, c => { const r = Math.random() * 16 | 0; return (c === 'x' ? r : (r & 0x3 | 0x8)).toString(16); });
+          const { error } = await supabase
+            .from("users")
+            .insert({
+              id: newId,
+              email: email,
+              display_name: displayName,
+              station: stationCode
+            });
+          if (error) throw error;
+        }
+      }
+
+      setStationEmailStatus(prev => ({ ...prev, [stationCode]: "Recipients saved successfully!" }));
+      setStationEmailSuccess(prev => ({ ...prev, [stationCode]: true }));
+      setTimeout(() => {
+        setStationEmailStatus(prev => ({ ...prev, [stationCode]: "" }));
+        setStationEmailSuccess(prev => ({ ...prev, [stationCode]: null }));
+      }, 3000);
+
+      fetchDbUsers(supabase);
+    } catch (err: any) {
+      console.error("Failed to save station recipients", err);
+      setStationEmailStatus(prev => ({ ...prev, [stationCode]: `Error: ${err.message || "Failed to save"}` }));
+      setStationEmailSuccess(prev => ({ ...prev, [stationCode]: false }));
+    } finally {
+      setStationEmailLoading(prev => ({ ...prev, [stationCode]: false }));
+    }
   };
 
   // Intercepting the "Send Stats" button to trigger the new verification step
@@ -1651,9 +1776,9 @@ ORDER BY vt.ETD DESC, ROUND(SUM(vs.Revenue_USD), 2) DESC;
       if (!etdVal) return;
       const date = new Date(etdVal);
       if (isNaN(date.getTime())) return;
-      const dateStr = date.toISOString().slice(0, 10);
+      const dateStr = `${date.getUTCFullYear()}-${String(date.getUTCMonth() + 1).padStart(2, '0')}-${String(date.getUTCDate()).padStart(2, '0')}`;
       const dayNames = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
-      const label = `${dayNames[date.getDay()]} ${date.getDate()}/${date.getMonth() + 1}`;
+      const label = `${dayNames[date.getUTCDay()]} ${date.getUTCDate()}/${date.getUTCMonth() + 1}`;
 
       const carrier = r.Airline ?? r.AirlineName1 ?? r.carrier ?? "Unknown Carrier";
       const ton = Number(r.Total_Tonnage ?? r.Tonnage_Chargeable ?? r.Air_ChargebleWeight ?? r.tonnage ?? 0);
@@ -1697,13 +1822,12 @@ ORDER BY vt.ETD DESC, ROUND(SUM(vs.Revenue_USD), 2) DESC;
       if (etdVal) {
         const date = new Date(etdVal);
         if (isNaN(date.getTime())) return;
-        recordMonth = date.getMonth() + 1;
-        const td = new Date(date.valueOf());
-        td.setHours(0, 0, 0, 0);
-        td.setDate(td.getDate() + 3 - (td.getDay() + 6) % 7);
-        const w1 = new Date(td.getFullYear(), 0, 4);
-        const wn = 1 + Math.round(((td.valueOf() - w1.valueOf()) / 86400000 - 3 + (w1.getDay() + 6) % 7) / 7);
-        const yr = date.getFullYear();
+        recordMonth = date.getUTCMonth() + 1;
+        const td = new Date(Date.UTC(date.getUTCFullYear(), date.getUTCMonth(), date.getUTCDate()));
+        td.setUTCDate(td.getUTCDate() + 3 - (td.getUTCDay() + 6) % 7);
+        const w1 = new Date(Date.UTC(td.getUTCFullYear(), 0, 4));
+        const wn = 1 + Math.round(((td.valueOf() - w1.valueOf()) / 86400000 - 3 + (w1.getUTCDay() + 6) % 7) / 7);
+        const yr = date.getUTCFullYear();
         sortKey = `${yr}-${String(wn).padStart(2, '0')}`;
         weekLabel = `W${wn} '${String(yr).slice(-2)}`;
       } else {
@@ -1740,7 +1864,7 @@ ORDER BY vt.ETD DESC, ROUND(SUM(vs.Revenue_USD), 2) DESC;
   const CustomXAxisTick = (props: any) => {
     const { x, y, payload } = props;
     const value = payload.value;
-    
+
     if (activeSection === "monthly-reports") {
       const index = weeklyStackedAirlineData.findIndex(item => item.week_label === value);
       if (index !== -1) {
@@ -1937,7 +2061,7 @@ ORDER BY vt.ETD DESC, ROUND(SUM(vs.Revenue_USD), 2) DESC;
       if (!etdVal) return;
       const date = new Date(etdVal);
       if (isNaN(date.getTime())) return;
-      const dateStr = date.toISOString().slice(0, 10); // YYYY-MM-DD key for sorting
+      const dateStr = `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}`; // YYYY-MM-DD key for sorting
       const dayNames = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
       const label = `${dayNames[date.getDay()]} ${date.getDate()}/${date.getMonth() + 1}`;
       if (!dayMap[dateStr]) {
@@ -2023,9 +2147,14 @@ ORDER BY vt.ETD DESC, ROUND(SUM(vs.Revenue_USD), 2) DESC;
   };
 
   // ── Admin panel state
-  const [adminCustomEmail, setAdminCustomEmail] = useState("");
-  const [adminAddStatus, setAdminAddStatus] = useState("");
   const [schedulePlaceholder, setSchedulePlaceholder] = useState("weekly");
+
+  // ── Users page state
+  const [newUserEmail, setNewUserEmail] = useState("");
+  const [newUserName, setNewUserName] = useState("");
+  const [newUserStation, setNewUserStation] = useState("Global");
+  const [dbUserSearch, setDbUserSearch] = useState("");
+  const [dbUserStationFilter, setDbUserStationFilter] = useState("ALL");
 
   if (authLoading) {
     return (
@@ -2048,7 +2177,7 @@ ORDER BY vt.ETD DESC, ROUND(SUM(vs.Revenue_USD), 2) DESC;
             <h2 className="text-2xl font-black text-slate-800 tracking-tight">DGL Tonnage Dashboard</h2>
             <p className="text-xs text-slate-400 font-medium">Administrator Sign In Required</p>
           </div>
-          
+
           <form onSubmit={handleEmailPasswordLogin} className="w-full space-y-4">
             <div className="flex flex-col gap-1">
               <label className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">Email Address</label>
@@ -2061,7 +2190,7 @@ ORDER BY vt.ETD DESC, ROUND(SUM(vs.Revenue_USD), 2) DESC;
                 className="h-10 text-xs bg-slate-50 border-[#E2E8F0] rounded-xl text-slate-700 focus:bg-white"
               />
             </div>
-            
+
             <div className="flex flex-col gap-1">
               <label className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">Password</label>
               <Input
@@ -2105,7 +2234,7 @@ ORDER BY vt.ETD DESC, ROUND(SUM(vs.Revenue_USD), 2) DESC;
               The email <span className="text-slate-700 font-semibold">{session.user.email}</span> is not registered in the administrator database.
             </p>
           </div>
-          
+
           <div className="w-full border-t border-slate-100 my-2" />
 
           <Button
@@ -2148,7 +2277,7 @@ ORDER BY vt.ETD DESC, ROUND(SUM(vs.Revenue_USD), 2) DESC;
                 </button>
               </div>
             )}
-            
+
             {session && (
               <div className="lg:hidden flex items-center">
                 <Button
@@ -2172,7 +2301,7 @@ ORDER BY vt.ETD DESC, ROUND(SUM(vs.Revenue_USD), 2) DESC;
             </span>
 
             {/* Quick Admin shortcut (shown on non-admin sections) */}
-            {activeSection !== "admin" && activeSection !== "email-scheduling" && (
+            {activeSection !== "admin" && activeSection !== "email-scheduling" && activeSection !== "users" && (
               <Button
                 onClick={() => setActiveSection("admin")}
                 className="h-8 px-3 bg-white hover:bg-slate-50 border border-[#CBD5E0] text-slate-700 text-xs font-semibold rounded-md flex items-center gap-1.5 transition-all shadow-sm"
@@ -2183,7 +2312,7 @@ ORDER BY vt.ETD DESC, ROUND(SUM(vs.Revenue_USD), 2) DESC;
             )}
 
             {/* PDF Live Preview */}
-            {activeSection !== "admin" && activeSection !== "email-scheduling" && (
+            {activeSection !== "admin" && activeSection !== "email-scheduling" && activeSection !== "users" && (
               <Button
                 onClick={openPdfPreview}
                 className="h-8 px-3.5 bg-white hover:bg-slate-50 border border-[#CBD5E0] text-slate-700 text-xs font-bold rounded-md flex items-center gap-1.5 transition-all shadow-sm"
@@ -2266,6 +2395,14 @@ ORDER BY vt.ETD DESC, ROUND(SUM(vs.Revenue_USD), 2) DESC;
             <span>Email Scheduling</span>
           </button>
 
+          <button
+            onClick={() => setActiveSection("users")}
+            className={`sidebar-nav-item ${activeSection === "users" ? "active" : ""}`}
+          >
+            <Users className="nav-icon" />
+            <span>Users</span>
+          </button>
+
           <div style={{ marginTop: "auto" }} className="px-4 pt-4 pb-2 border-t border-[#EDF2F7]">
             <p className="text-[9px] text-slate-300 font-semibold">DGL Tonnage Analysis</p>
             <p className="text-[9px] text-slate-300">&copy; 2026 Dart Global Logistics</p>
@@ -2276,7 +2413,7 @@ ORDER BY vt.ETD DESC, ROUND(SUM(vs.Revenue_USD), 2) DESC;
         <div className="flex-1 min-w-0 pb-12">
 
           {/* ── FILTER UTILITIES STRIP ── */}
-          {activeSection !== "admin" && activeSection !== "email-scheduling" && (
+          {activeSection !== "admin" && activeSection !== "email-scheduling" && activeSection !== "users" && (
             <div className="max-w-[1380px] mx-auto px-6 mt-6">
               <div className="bg-white rounded-xl p-5 border border-[#E2E8F0] shadow-sm space-y-4">
 
@@ -2468,8 +2605,8 @@ SELECT
     vt.ETD,
     COALESCE(vt.RealLoadPortCountryName, 'N/A') AS Origin_Country,
     COALESCE(vt.RealLoadPortCity, 'N/A') AS Origin_City,
-    COALESCE(vt.RealDisChargePortCountryName, 'N/A') AS Destination_City,
-    COALESCE(vt.RealDisChargePortCity, 'N/A') AS Destination_Country,
+    COALESCE(vt.RealDisChargePortCountryName, 'N/A') AS Destination_Country,
+    COALESCE(vt.RealDisChargePortCity, 'N/A') AS Destination_City,
     COALESCE(MAX(vs.Company), 'Unlinked') AS Company_Code,
     COUNT(DISTINCT vs.ShipmentNumber) AS Total_Shipments,
     ROUND(MAX(vt.Air_ChargebleWeight), 2) AS Tonnage_Chargeable,
@@ -2506,8 +2643,8 @@ SELECT
     vt.ETD,
     COALESCE(vt.RealLoadPortCountryName, 'N/A') AS Origin_Country,
     COALESCE(vt.RealLoadPortCity, 'N/A') AS Origin_City,
-    COALESCE(vt.RealDisChargePortCountryName, 'N/A') AS Destination_City,
-    COALESCE(vt.RealDisChargePortCity, 'N/A') AS Destination_Country,
+    COALESCE(vt.RealDisChargePortCountryName, 'N/A') AS Destination_Country,
+    COALESCE(vt.RealDisChargePortCity, 'N/A') AS Destination_City,
     COALESCE(MAX(vs.Company), 'Unlinked') AS Company_Code,
     COUNT(DISTINCT vs.ShipmentNumber) AS Total_Shipments,
     ROUND(MAX(vt.Air_ChargebleWeight), 2) AS Tonnage_Chargeable,
@@ -2569,7 +2706,7 @@ ORDER BY vt.ETD DESC, ROUND(SUM(vs.Revenue_USD), 2) DESC`);
           )}
 
           {/* ── SELECTED RECIPIENTS STRIP (Dashboard only) ── */}
-          {activeSection !== "admin" && activeSection !== "email-scheduling" && selectedEmails.length > 0 && (
+          {activeSection !== "admin" && activeSection !== "email-scheduling" && activeSection !== "users" && selectedEmails.length > 0 && (
             <div className="max-w-[1380px] mx-auto px-6 mt-3 animate-in fade-in-0 duration-200">
               <div className="flex flex-wrap items-center gap-2 p-2 bg-[#EBF8FF]/50 border border-[#BEE3F8]/60 rounded-lg shadow-sm">
                 <span className="text-[10px] font-bold text-[#2B6CB0] uppercase tracking-wider px-1">Selected Recipients:</span>
@@ -2589,7 +2726,7 @@ ORDER BY vt.ETD DESC, ROUND(SUM(vs.Revenue_USD), 2) DESC`);
             </div>
           )}
           {/* Inline Feedback Alerts */}
-          {activeSection !== "admin" && activeSection !== "email-scheduling" && emailStatus && (
+          {activeSection !== "admin" && activeSection !== "email-scheduling" && activeSection !== "users" && emailStatus && (
             <div className="max-w-[1380px] mx-auto px-6 mt-4">
               <div className={`p-3 rounded-lg border text-xs flex items-center justify-between ${emailSuccess === true ? "bg-emerald-50 border-emerald-200 text-emerald-700" : "bg-blue-50 border-blue-200 text-blue-700"}`}>
                 <span>{emailStatus}</span>
@@ -2685,76 +2822,54 @@ ORDER BY vt.ETD DESC, ROUND(SUM(vs.Revenue_USD), 2) DESC`);
                                 </span>
                               </div>
 
-                              {/* Toggle Users list */}
-                              <button
-                                onClick={() => setExpandedStation(prev => ({ ...prev, [station.code]: !showUsers }))}
-                                className="w-full flex items-center justify-between p-2 rounded-lg bg-slate-50 hover:bg-slate-100 border border-slate-200 text-[10px] font-bold text-slate-600 transition-colors mb-3"
-                              >
-                                <span className="flex items-center gap-1.5">👥 {showUsers ? "Hide Station Users" : `View Mapped Users (${stationUsers.length})`}</span>
-                                <ChevronDown className={`w-3.5 h-3.5 text-slate-400 transition-transform ${showUsers ? "rotate-180" : ""}`} />
-                              </button>
-
-                              {/* Collapsible list */}
-                              {showUsers && (
-                                <div className="space-y-1.5 max-h-48 overflow-y-auto mb-3 border border-slate-200 p-2 rounded-lg bg-slate-50/50">
-                                  {stationUsers.length === 0 ? (
-                                    <p className="text-[10px] text-slate-400 italic p-1">No AD users mapped to this station</p>
-                                  ) : (
-                                    stationUsers.map((u: any) => {
-                                      const isChecked = selectedEmailsForStation.includes(u.email);
-                                      return (
-                                        <div
-                                          key={u.email}
-                                          onClick={() => {
-                                            if (isChecked) {
-                                              setStationSelectedEmails(prev => ({
-                                                ...prev,
-                                                [station.code]: (prev[station.code] || []).filter(x => x !== u.email)
-                                              }));
-                                            } else {
-                                              setStationSelectedEmails(prev => ({
-                                                ...prev,
-                                                [station.code]: [...(prev[station.code] || []), u.email]
-                                              }));
-                                            }
-                                          }}
-                                          className={`flex items-center justify-between p-1.5 rounded border text-[10px] cursor-pointer transition-all ${isChecked ? "bg-[#EBF8FF] border-[#BEE3F8] text-[#2B6CB0] font-semibold" : "bg-white border-slate-100 hover:border-slate-200 text-slate-700"}`}
-                                        >
-                                          <div className="truncate pr-1 min-w-0 flex-1">
-                                            <p className="truncate font-semibold text-slate-800">{u.displayName}</p>
-                                            <p className="truncate text-[8px] text-slate-400 font-medium">{u.email}</p>
-                                          </div>
-                                          <div className={`w-3.5 h-3.5 rounded-full border flex items-center justify-center shrink-0 ${isChecked ? "border-[#3182CE] bg-[#3182CE]" : "border-slate-300"}`}>
-                                            {isChecked && <Check className="w-2 h-2 text-white" />}
-                                          </div>
-                                        </div>
-                                      );
-                                    })
-                                  )}
-                                </div>
-                              )}
-
-                              {/* Custom Email Input inside Card */}
-                              <div className="flex gap-1.5 mb-4">
+                              {/* Search AD Users to Add */}
+                              <div className="relative mb-3">
                                 <Input
-                                  placeholder="Add custom email..."
-                                  value={customInput}
-                                  onChange={(e) => setStationCustomEmailInput(prev => ({ ...prev, [station.code]: e.target.value }))}
-                                  onKeyDown={(e) => {
-                                    if (e.key === "Enter") {
-                                      e.preventDefault();
-                                      handleAddStationCustomEmail(station.code);
-                                    }
-                                  }}
-                                  className="h-7 text-[10px] bg-white border-[#CBD5E0] focus:border-[#4299E1] rounded-md text-slate-700 placeholder:text-slate-400"
+                                  placeholder="Search users to add..."
+                                  value={stationUserSearch[station.code] || ""}
+                                  onChange={(e) => setStationUserSearch(prev => ({ ...prev, [station.code]: e.target.value }))}
+                                  className="h-8 text-[10px] bg-slate-50 border-slate-200 rounded-lg text-slate-700 placeholder:text-slate-400"
                                 />
-                                <Button
-                                  size="sm"
-                                  onClick={() => handleAddStationCustomEmail(station.code)}
-                                  className="h-7 px-2.5 bg-[#4299E1] hover:bg-[#3182CE] text-white text-[10px] font-bold rounded-md shrink-0"
-                                >
-                                  + Add
-                                </Button>
+                                {(stationUserSearch[station.code] || "").trim() && (
+                                  <div className="absolute left-0 right-0 mt-1 max-h-48 overflow-y-auto bg-white border border-slate-200 rounded-lg shadow-lg z-10 divide-y divide-slate-100">
+                                    {orgUsers
+                                      .filter((u) => {
+                                        const query = (stationUserSearch[station.code] || "").toLowerCase().trim();
+                                        return (u.displayName || "").toLowerCase().includes(query) || (u.email || "").toLowerCase().includes(query);
+                                      })
+                                      .slice(0, 5)
+                                      .map((u) => {
+                                        const isSelected = selectedEmailsForStation.includes(u.email);
+                                        return (
+                                          <div
+                                            key={u.email}
+                                            onClick={() => {
+                                              if (!isSelected) {
+                                                setStationSelectedEmails(prev => ({
+                                                  ...prev,
+                                                  [station.code]: [...(prev[station.code] || []), u.email]
+                                                }));
+                                              }
+                                              setStationUserSearch(prev => ({ ...prev, [station.code]: "" }));
+                                            }}
+                                            className="p-2 text-[10px] hover:bg-slate-50 cursor-pointer flex justify-between items-center"
+                                          >
+                                            <div className="truncate pr-2">
+                                              <p className="font-semibold text-slate-700 truncate">{u.displayName}</p>
+                                              <p className="text-[8px] text-slate-400 truncate">{u.email}</p>
+                                            </div>
+                                            {isSelected && <span className="text-[8px] text-[#3182CE] font-bold">Added</span>}
+                                          </div>
+                                        );
+                                      })}
+                                    {orgUsers.filter((u) => {
+                                      const query = (stationUserSearch[station.code] || "").toLowerCase().trim();
+                                      return (u.displayName || "").toLowerCase().includes(query) || (u.email || "").toLowerCase().includes(query);
+                                    }).length === 0 && (
+                                        <p className="p-2 text-[9px] text-slate-400 italic">No matching users found</p>
+                                      )}
+                                  </div>
+                                )}
                               </div>
 
                               {/* Recipient summary / badge cloud */}
@@ -2784,6 +2899,15 @@ ORDER BY vt.ETD DESC, ROUND(SUM(vs.Revenue_USD), 2) DESC`);
 
                             {/* Card Bottom / Sending controls */}
                             <div className="border-t border-[#EDF2F7] pt-3 mt-auto">
+                              <div className="flex gap-2 mb-2">
+                                <Button
+                                  onClick={() => handleSaveStationRecipients(station.code)}
+                                  disabled={isSending}
+                                  className="flex-1 h-8 bg-emerald-600 hover:bg-emerald-700 text-white text-[10.5px] font-bold rounded-lg flex items-center justify-center gap-1.5 shadow"
+                                >
+                                  Save Recipients
+                                </Button>
+                              </div>
                               <Button
                                 onClick={() => handleSendStationEmail(station.code, station.country)}
                                 disabled={selectedEmailsForStation.length === 0 || isSending}
@@ -2836,73 +2960,54 @@ ORDER BY vt.ETD DESC, ROUND(SUM(vs.Revenue_USD), 2) DESC`);
                                 </span>
                               </div>
 
-                              <button
-                                onClick={() => setExpandedStation(prev => ({ ...prev, [stationCode]: !showUsers }))}
-                                className="w-full flex items-center justify-between p-2 rounded-lg bg-slate-50 hover:bg-slate-100 border border-slate-200 text-[10px] font-bold text-slate-600 transition-colors mb-3"
-                              >
-                                <span className="flex items-center gap-1.5">👥 {showUsers ? "Hide Users" : `View Mapped Users (${otherUsers.length})`}</span>
-                                <ChevronDown className={`w-3.5 h-3.5 text-slate-400 transition-transform ${showUsers ? "rotate-180" : ""}`} />
-                              </button>
-
-                              {showUsers && (
-                                <div className="space-y-1.5 max-h-48 overflow-y-auto mb-3 border border-slate-200 p-2 rounded-lg bg-slate-50/50">
-                                  {otherUsers.length === 0 ? (
-                                    <p className="text-[10px] text-slate-400 italic p-1">No unmatched users</p>
-                                  ) : (
-                                    otherUsers.map((u: any) => {
-                                      const isChecked = selectedEmailsForStation.includes(u.email);
-                                      return (
-                                        <div
-                                          key={u.email}
-                                          onClick={() => {
-                                            if (isChecked) {
-                                              setStationSelectedEmails(prev => ({
-                                                ...prev,
-                                                [stationCode]: (prev[stationCode] || []).filter(x => x !== u.email)
-                                              }));
-                                            } else {
-                                              setStationSelectedEmails(prev => ({
-                                                ...prev,
-                                                [stationCode]: [...(prev[stationCode] || []), u.email]
-                                              }));
-                                            }
-                                          }}
-                                          className={`flex items-center justify-between p-1.5 rounded border text-[10px] cursor-pointer transition-all ${isChecked ? "bg-[#EBF8FF] border-[#BEE3F8] text-[#2B6CB0] font-semibold" : "bg-white border-slate-100 hover:border-slate-200 text-slate-700"}`}
-                                        >
-                                          <div className="truncate pr-1 min-w-0 flex-1">
-                                            <p className="truncate font-semibold text-slate-800">{u.displayName}</p>
-                                            <p className="truncate text-[8px] text-slate-400 font-medium">{u.email}</p>
-                                          </div>
-                                          <div className={`w-3.5 h-3.5 rounded-full border flex items-center justify-center shrink-0 ${isChecked ? "border-[#3182CE] bg-[#3182CE]" : "border-slate-300"}`}>
-                                            {isChecked && <Check className="w-2 h-2 text-white" />}
-                                          </div>
-                                        </div>
-                                      );
-                                    })
-                                  )}
-                                </div>
-                              )}
-
-                              <div className="flex gap-1.5 mb-4">
+                              {/* Search AD Users to Add */}
+                              <div className="relative mb-3">
                                 <Input
-                                  placeholder="Add custom email..."
-                                  value={customInput}
-                                  onChange={(e) => setStationCustomEmailInput(prev => ({ ...prev, [stationCode]: e.target.value }))}
-                                  onKeyDown={(e) => {
-                                    if (e.key === "Enter") {
-                                      e.preventDefault();
-                                      handleAddStationCustomEmail(stationCode);
-                                    }
-                                  }}
-                                  className="h-7 text-[10px] bg-white border-[#CBD5E0] focus:border-[#4299E1] rounded-md text-slate-700 placeholder:text-slate-400"
+                                  placeholder="Search users to add..."
+                                  value={stationUserSearch[stationCode] || ""}
+                                  onChange={(e) => setStationUserSearch(prev => ({ ...prev, [stationCode]: e.target.value }))}
+                                  className="h-8 text-[10px] bg-slate-50 border-slate-200 rounded-lg text-slate-700 placeholder:text-slate-400"
                                 />
-                                <Button
-                                  size="sm"
-                                  onClick={() => handleAddStationCustomEmail(stationCode)}
-                                  className="h-7 px-2.5 bg-[#4299E1] hover:bg-[#3182CE] text-white text-[10px] font-bold rounded-md shrink-0"
-                                >
-                                  + Add
-                                </Button>
+                                {(stationUserSearch[stationCode] || "").trim() && (
+                                  <div className="absolute left-0 right-0 mt-1 max-h-48 overflow-y-auto bg-white border border-slate-200 rounded-lg shadow-lg z-10 divide-y divide-slate-100">
+                                    {orgUsers
+                                      .filter((u) => {
+                                        const query = (stationUserSearch[stationCode] || "").toLowerCase().trim();
+                                        return (u.displayName || "").toLowerCase().includes(query) || (u.email || "").toLowerCase().includes(query);
+                                      })
+                                      .slice(0, 5)
+                                      .map((u) => {
+                                        const isSelected = selectedEmailsForStation.includes(u.email);
+                                        return (
+                                          <div
+                                            key={u.email}
+                                            onClick={() => {
+                                              if (!isSelected) {
+                                                setStationSelectedEmails(prev => ({
+                                                  ...prev,
+                                                  [stationCode]: [...(prev[stationCode] || []), u.email]
+                                                }));
+                                              }
+                                              setStationUserSearch(prev => ({ ...prev, [stationCode]: "" }));
+                                            }}
+                                            className="p-2 text-[10px] hover:bg-slate-50 cursor-pointer flex justify-between items-center"
+                                          >
+                                            <div className="truncate pr-2">
+                                              <p className="font-semibold text-slate-700 truncate">{u.displayName}</p>
+                                              <p className="text-[8px] text-slate-400 truncate">{u.email}</p>
+                                            </div>
+                                            {isSelected && <span className="text-[8px] text-[#3182CE] font-bold">Added</span>}
+                                          </div>
+                                        );
+                                      })}
+                                    {orgUsers.filter((u) => {
+                                      const query = (stationUserSearch[stationCode] || "").toLowerCase().trim();
+                                      return (u.displayName || "").toLowerCase().includes(query) || (u.email || "").toLowerCase().includes(query);
+                                    }).length === 0 && (
+                                        <p className="p-2 text-[9px] text-slate-400 italic">No matching users found</p>
+                                      )}
+                                  </div>
+                                )}
                               </div>
 
                               {selectedEmailsForStation.length > 0 && (
@@ -2931,6 +3036,15 @@ ORDER BY vt.ETD DESC, ROUND(SUM(vs.Revenue_USD), 2) DESC`);
 
                             <div className="border-t border-[#EDF2F7] pt-3 mt-auto">
                               <p className="text-[8.5px] text-slate-400 italic mb-2">Note: Corporate reports are generated without country/station filters.</p>
+                              <div className="flex gap-2 mb-2">
+                                <Button
+                                  onClick={() => handleSaveStationRecipients("OTHER")}
+                                  disabled={isSending}
+                                  className="flex-1 h-8 bg-emerald-600 hover:bg-emerald-700 text-white text-[10.5px] font-bold rounded-lg flex items-center justify-center gap-1.5 shadow"
+                                >
+                                  Save Recipients
+                                </Button>
+                              </div>
                               <Button
                                 onClick={() => handleSendStationEmail("OTHER", "")}
                                 disabled={selectedEmailsForStation.length === 0 || isSending}
@@ -2981,7 +3095,7 @@ ORDER BY vt.ETD DESC, ROUND(SUM(vs.Revenue_USD), 2) DESC`);
                             )}
                             <button
                               onClick={() => { setOrgUsers([]); fetchOrgUsers(); }}
-                              className="p-1.5 rounded-lg hover:bg-slate-100 text-slate-400 hover:text-slate-655 transition-colors"
+                              className="p-1.5 rounded-lg hover:bg-slate-100 text-slate-400 hover:text-slate-600 transition-colors"
                               title="Refresh users"
                             >
                               <RefreshCw className={`w-3.5 h-3.5 ${orgUsersLoading ? "animate-spin" : ""}`} />
@@ -3157,153 +3271,6 @@ ORDER BY vt.ETD DESC, ROUND(SUM(vs.Revenue_USD), 2) DESC`);
                           </div>
                         )}
 
-                        {/* Add Custom Email */}
-                        <div className="border-t border-[#EDF2F7] pt-4">
-                          <p className="text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-2.5">Add Custom Email</p>
-                          <div className="flex gap-2">
-                            <Input
-                              placeholder="recipient@company.com"
-                              value={adminCustomEmail}
-                              onChange={(e) => setAdminCustomEmail(e.target.value)}
-                              onKeyDown={(e) => {
-                                if (e.key === "Enter") {
-                                  e.preventDefault();
-                                  const trimmed = adminCustomEmail.trim();
-                                  if (trimmed && !availableEmails.includes(trimmed)) {
-                                    setAvailableEmails([...availableEmails, trimmed]);
-                                    setSelectedEmails([...selectedEmails, trimmed]);
-                                    setAdminCustomEmail("");
-                                    setAdminAddStatus(`✓ ${trimmed} added successfully`);
-                                    setTimeout(() => setAdminAddStatus(""), 3000);
-                                  }
-                                }
-                              }}
-                              className="h-9 text-xs bg-white border-[#CBD5E0] focus:border-[#4299E1] rounded-lg text-slate-700"
-                            />
-                            <Button
-                              onClick={() => {
-                                const trimmed = adminCustomEmail.trim();
-                                if (trimmed && !availableEmails.includes(trimmed)) {
-                                  setAvailableEmails([...availableEmails, trimmed]);
-                                  setSelectedEmails([...selectedEmails, trimmed]);
-                                  setAdminCustomEmail("");
-                                  setAdminAddStatus(`✓ ${trimmed} added successfully`);
-                                  setTimeout(() => setAdminAddStatus(""), 3000);
-                                }
-                              }}
-                              className="h-9 px-4 bg-[#4299E1] hover:bg-[#3182CE] text-white text-xs font-bold rounded-lg shrink-0 flex items-center gap-1.5"
-                            >
-                              <Plus className="w-3.5 h-3.5" /> Add
-                            </Button>
-                          </div>
-                          {adminAddStatus && (
-                            <p className="text-[10.5px] text-emerald-600 font-semibold mt-2 flex items-center gap-1">
-                              <CheckCircle className="w-3.5 h-3.5" /> {adminAddStatus}
-                            </p>
-                          )}
-                        </div>
-                      </div>
-
-                      {/* Send Report Card */}
-                      <div className="admin-card p-6">
-                        <div className="flex items-center gap-2.5 mb-5 pb-4 border-b border-[#EDF2F7]">
-                          <div className="w-8 h-8 rounded-lg bg-emerald-50 flex items-center justify-center">
-                            <Send className="w-4 h-4 text-emerald-600" />
-                          </div>
-                          <div>
-                            <h3 className="text-sm font-bold text-[#1A202C]">Send Report</h3>
-                            <p className="text-[10.5px] text-slate-400">Dispatch PDF via Microsoft Graph to selected recipients</p>
-                          </div>
-                        </div>
-
-                        {/* Selected recipients summary */}
-                        <div className="mb-5">
-                          <p className="text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-2">Sending To</p>
-                          {selectedEmails.length === 0 ? (
-                            <div className="flex items-center gap-2 p-3 bg-amber-50 border border-amber-200 rounded-lg text-xs text-amber-700">
-                              <Bell className="w-3.5 h-3.5 shrink-0" />
-                              <span>Select at least one recipient from the list above.</span>
-                            </div>
-                          ) : (
-                            <div className="flex flex-wrap gap-1.5">
-                              {selectedEmails.map((e) => (
-                                <Badge
-                                  key={e}
-                                  className="bg-[#EBF8FF] text-[#2B6CB0] border border-[#BEE3F8] font-semibold text-[10px] px-2 py-0.5 rounded-full flex items-center gap-1"
-                                >
-                                  {e}
-                                  <X
-                                    className="w-2.5 h-2.5 cursor-pointer hover:opacity-70"
-                                    onClick={() => setSelectedEmails(selectedEmails.filter((x) => x !== e))}
-                                  />
-                                </Badge>
-                              ))}
-                            </div>
-                          )}
-                        </div>
-
-                        {/* PDF Section selector inline */}
-                        <div className="mb-5">
-                          <p className="text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-2.5">Report Sections</p>
-                          <div className="grid grid-cols-2 gap-2">
-                            {([
-                              { key: "weeklyVisual", label: "Weekly Charts", color: "blue" },
-                              { key: "weeklyLedger", label: "Airline Table", color: "blue" },
-                              { key: "monthlyVisual", label: "Monthly Charts", color: "teal" },
-                              { key: "monthlyLedger", label: "Monthly Table", color: "teal" },
-                            ] as const).map(({ key, label, color }) => (
-                              <div
-                                key={key}
-                                onClick={() => setPdfSections({ ...pdfSections, [key]: !pdfSections[key] })}
-                                className={`flex items-center gap-2 p-2.5 rounded-lg border cursor-pointer transition-all text-xs ${pdfSections[key]
-                                  ? color === "teal"
-                                    ? "bg-teal-50 border-teal-200 text-teal-800"
-                                    : "bg-blue-50 border-blue-200 text-blue-800"
-                                  : "bg-slate-50 border-slate-200 text-slate-500"
-                                  }`}
-                              >
-                                <div className={`w-4 h-4 rounded border-2 flex items-center justify-center shrink-0 transition-all ${pdfSections[key]
-                                  ? color === "teal" ? "border-teal-500 bg-teal-500" : "border-[#4299E1] bg-[#4299E1]"
-                                  : "border-slate-300"
-                                  }`}>
-                                  {pdfSections[key] && <Check className="w-2.5 h-2.5 text-white" />}
-                                </div>
-                                <span className="font-semibold">{label}</span>
-                              </div>
-                            ))}
-                          </div>
-                        </div>
-
-                        {/* Action buttons */}
-                        <div className="flex gap-3">
-                          <Button
-                            onClick={openPdfPreview}
-                            className="flex-1 h-9 bg-white hover:bg-slate-50 border border-[#CBD5E0] text-slate-700 text-xs font-bold rounded-lg flex items-center justify-center gap-1.5 shadow-sm"
-                          >
-                            <Eye className="w-3.5 h-3.5 text-slate-500" />
-                            PDF Preview
-                          </Button>
-                          <Button
-                            onClick={handleSendStatsClick}
-                            disabled={selectedEmails.length === 0 || emailLoading}
-                            className="flex-1 h-9 bg-[#4299E1] hover:bg-[#3182CE] disabled:opacity-50 text-white text-xs font-bold rounded-lg flex items-center justify-center gap-1.5 shadow-sm"
-                          >
-                            {emailLoading ? <RefreshCw className="w-3.5 h-3.5 animate-spin" /> : <Send className="w-3.5 h-3.5" />}
-                            Send to ({selectedEmails.length})
-                          </Button>
-                        </div>
-
-                        {/* Email feedback */}
-                        {emailStatus && (
-                          <div className={`mt-3 p-3 rounded-lg border text-xs flex items-center justify-between ${emailSuccess === true ? "bg-emerald-50 border-emerald-200 text-emerald-700" : "bg-blue-50 border-blue-200 text-blue-700"
-                            }`}>
-                            <span className="flex items-center gap-1.5">
-                              {emailSuccess === true && <CheckCircle className="w-3.5 h-3.5" />}
-                              {emailStatus}
-                            </span>
-                            <button onClick={() => setEmailStatus("")} className="hover:opacity-70"><X className="w-3 h-3" /></button>
-                          </div>
-                        )}
                       </div>
                     </>
                   )}
@@ -3315,10 +3282,10 @@ ORDER BY vt.ETD DESC, ROUND(SUM(vs.Revenue_USD), 2) DESC`);
 
           {/* ── EMAIL SCHEDULING SECTION ── */}
           {activeSection === "email-scheduling" && (
-            <div className="max-w-[1380px] mx-auto px-6 py-8 space-y-8 animate-in fade-in-0 duration-200">
+            <div className="max-w-[1380px] mx-auto px-6 py-8 space-y-6 animate-in fade-in-0 duration-200">
 
               {/* Email Scheduling Header */}
-              <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 border-b border-slate-200 pb-4 mb-6">
+              <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 border-b border-slate-200 pb-4 mb-4">
                 <div>
                   <div className="flex items-center gap-2.5 mb-1">
                     <Clock className="w-5 h-5 text-violet-600" />
@@ -3328,259 +3295,472 @@ ORDER BY vt.ETD DESC, ROUND(SUM(vs.Revenue_USD), 2) DESC`);
                 </div>
               </div>
 
+              {/* Tab Navigation for Scheduling */}
+              <div className="flex border-b border-slate-200 mb-2">
+                <button
+                  onClick={() => setSchedActiveTab("list")}
+                  className={`pb-2.5 px-4 font-bold text-xs border-b-2 transition-all flex items-center gap-1.5 ${schedActiveTab === "list" ? "border-violet-600 text-violet-600" : "border-transparent text-slate-400 hover:text-slate-600"}`}
+                >
+                  <Clock className="w-3.5 h-3.5" />
+                  Active Schedules
+                </button>
+                <button
+                  onClick={() => setSchedActiveTab("create")}
+                  className={`pb-2.5 px-4 font-bold text-xs border-b-2 transition-all flex items-center gap-1.5 ${schedActiveTab === "create" ? "border-violet-600 text-violet-600" : "border-transparent text-slate-400 hover:text-slate-600"}`}
+                >
+                  <Plus className="w-3.5 h-3.5" />
+                  Configure New Schedule
+                </button>
+              </div>
+
               <div className="grid grid-cols-12 gap-6">
                 {/* ── LEFT COL: Configure New Schedule Form ── */}
-                <div className="col-span-12 lg:col-span-5">
-                  <div className="admin-card p-6 bg-white border border-slate-200 rounded-xl shadow-sm relative overflow-hidden">
-                    <div className="flex items-center gap-2.5 mb-5 pb-4 border-b border-[#EDF2F7]">
-                      <div className="w-8 h-8 rounded-lg bg-violet-50 flex items-center justify-center">
-                        <Plus className="w-4 h-4 text-violet-500" />
-                      </div>
-                      <div>
-                        <h3 className="text-sm font-bold text-[#1A202C]">Configure New Schedule</h3>
-                        <p className="text-[10.5px] text-slate-400">Add a new automated dispatch schedule</p>
-                      </div>
-                    </div>
-
-                    <div className="space-y-4 text-xs">
-                      {/* Station filter mapping */}
-                      <div>
-                        <label className="block text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-1">Target Station</label>
-                        <select
-                          value={schedStation}
-                          onChange={(e) => setSchedStation(e.target.value)}
-                          className="w-full h-8 px-2 bg-slate-50 border border-slate-200 rounded-lg text-slate-700 font-semibold focus:outline-none focus:ring-1 focus:ring-violet-500"
-                        >
-                          <option value="Global">Global (All Stations)</option>
-                          <option value="CMB">Sri Lanka (CMB)</option>
-                          <option value="IND">India (IND)</option>
-                          <option value="VNM">Viet Nam (VNM)</option>
-                          <option value="DAC">Bangladesh (DAC)</option>
-                          <option value="PKI">Pakistan (PKI)</option>
-                          <option value="NYC">United States (NYC)</option>
-                        </select>
-                      </div>
-
-                      {/* Frequency */}
-                      <div>
-                        <label className="block text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-1">Frequency</label>
-                        <div className="flex gap-2">
-                          {["weekly", "monthly", "daily"].map((freq) => (
-                            <button
-                              key={freq}
-                              type="button"
-                              onClick={() => setSchedFrequency(freq as any)}
-                              className={`flex-1 py-1.5 rounded-lg border text-center font-bold capitalize transition-colors ${schedFrequency === freq ? "bg-violet-50 border-violet-200 text-violet-800" : "bg-slate-50 border-slate-200 text-slate-500 hover:bg-slate-100"}`}
-                            >
-                              {freq}
-                            </button>
-                          ))}
+                {schedActiveTab === "create" && (
+                  <div className="col-span-12">
+                    <div className="admin-card p-6 bg-white border border-slate-200 rounded-xl shadow-sm relative overflow-hidden">
+                      <div className="flex items-center gap-2.5 mb-5 pb-4 border-b border-[#EDF2F7]">
+                        <div className="w-8 h-8 rounded-lg bg-violet-50 flex items-center justify-center">
+                          <Plus className="w-4 h-4 text-violet-500" />
+                        </div>
+                        <div>
+                          <h3 className="text-sm font-bold text-[#1A202C]">Configure New Schedule</h3>
+                          <p className="text-[10.5px] text-slate-400">Add a new automated dispatch schedule</p>
                         </div>
                       </div>
 
-                      {/* Day selection based on frequency */}
-                      {schedFrequency === "weekly" && (
+                      <div className="space-y-4 text-xs">
+                        {/* Station filter mapping */}
                         <div>
-                          <label className="block text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-1">Day of Week</label>
+                          <label className="block text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-1">Target Station</label>
                           <select
-                            value={schedDayOfWeek}
-                            onChange={(e) => setSchedDayOfWeek(parseInt(e.target.value))}
+                            value={schedStation}
+                            onChange={(e) => setSchedStation(e.target.value)}
                             className="w-full h-8 px-2 bg-slate-50 border border-slate-200 rounded-lg text-slate-700 font-semibold focus:outline-none focus:ring-1 focus:ring-violet-500"
                           >
-                            <option value={0}>Monday</option>
-                            <option value={1}>Tuesday</option>
-                            <option value={2}>Wednesday</option>
-                            <option value={3}>Thursday</option>
-                            <option value={4}>Friday</option>
-                            <option value={5}>Saturday</option>
-                            <option value={6}>Sunday</option>
+                            <option value="Global">Global (All Stations)</option>
+                            <option value="CMB">Sri Lanka (CMB)</option>
+                            <option value="IND">India (IND)</option>
+                            <option value="VNM">Viet Nam (VNM)</option>
+                            <option value="DAC">Bangladesh (DAC)</option>
+                            <option value="PKI">Pakistan (PKI)</option>
+                            <option value="NYC">United States (NYC)</option>
                           </select>
                         </div>
-                      )}
 
-                      {schedFrequency === "monthly" && (
+                        {/* Frequency */}
                         <div>
-                          <label className="block text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-1">Day of Month</label>
-                          <select
-                            value={schedDayOfMonth}
-                            onChange={(e) => setSchedDayOfMonth(parseInt(e.target.value))}
-                            className="w-full h-8 px-2 bg-slate-50 border border-slate-200 rounded-lg text-slate-700 font-semibold focus:outline-none focus:ring-1 focus:ring-violet-500"
-                          >
-                            {Array.from({ length: 28 }, (_, i) => i + 1).map((day) => (
-                              <option key={day} value={day}>Day {day}</option>
+                          <label className="block text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-1">Frequency</label>
+                          <div className="flex gap-2">
+                            {["weekly", "monthly", "daily"].map((freq) => (
+                              <button
+                                key={freq}
+                                type="button"
+                                onClick={() => setSchedFrequency(freq as any)}
+                                className={`flex-1 py-1.5 rounded-lg border text-center font-bold capitalize transition-colors ${schedFrequency === freq ? "bg-violet-50 border-violet-200 text-violet-800" : "bg-slate-50 border-slate-200 text-slate-500 hover:bg-slate-100"}`}
+                              >
+                                {freq}
+                              </button>
                             ))}
+                          </div>
+                        </div>
+
+                        {/* Day selection based on frequency */}
+                        {schedFrequency === "weekly" && (
+                          <div>
+                            <label className="block text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-1">Day of Week</label>
+                            <select
+                              value={schedDayOfWeek}
+                              onChange={(e) => setSchedDayOfWeek(parseInt(e.target.value))}
+                              className="w-full h-8 px-2 bg-slate-50 border border-slate-200 rounded-lg text-slate-700 font-semibold focus:outline-none focus:ring-1 focus:ring-violet-500"
+                            >
+                              <option value={0}>Monday</option>
+                              <option value={1}>Tuesday</option>
+                              <option value={2}>Wednesday</option>
+                              <option value={3}>Thursday</option>
+                              <option value={4}>Friday</option>
+                              <option value={5}>Saturday</option>
+                              <option value={6}>Sunday</option>
+                            </select>
+                          </div>
+                        )}
+
+                        {schedFrequency === "monthly" && (
+                          <div>
+                            <label className="block text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-1">Day of Month</label>
+                            <select
+                              value={schedDayOfMonth}
+                              onChange={(e) => setSchedDayOfMonth(parseInt(e.target.value))}
+                              className="w-full h-8 px-2 bg-slate-50 border border-slate-200 rounded-lg text-slate-700 font-semibold focus:outline-none focus:ring-1 focus:ring-violet-500"
+                            >
+                              {Array.from({ length: 28 }, (_, i) => i + 1).map((day) => (
+                                <option key={day} value={day}>Day {day}</option>
+                              ))}
+                            </select>
+                          </div>
+                        )}
+
+                        {/* Time */}
+                        <div>
+                          <label className="block text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-1">Send Time (24h Local)</label>
+                          <Input
+                            type="time"
+                            value={schedTime}
+                            onChange={(e) => setSchedTime(e.target.value)}
+                            className="h-8 bg-slate-50 border-[#E2E8F0] rounded-lg text-slate-700 [color-scheme:light] font-semibold"
+                          />
+                        </div>
+
+                        {/* Custom date range (Optional) */}
+                        <div className="p-3 bg-slate-50 rounded-lg border border-slate-200 space-y-3">
+                          <div className="flex items-center justify-between">
+                            <span className="text-[10px] font-bold text-slate-500 uppercase tracking-wider">Custom Date Range (Optional)</span>
+                            <span className="text-[8px] bg-slate-200 text-slate-600 px-1.5 py-0.5 rounded font-black uppercase tracking-wider">Overrides Relative Period</span>
+                          </div>
+                          <div className="grid grid-cols-2 gap-2">
+                            <div>
+                              <label className="block text-[9px] font-bold text-slate-450 uppercase tracking-wider mb-1">Start Date</label>
+                              <Input
+                                type="date"
+                                value={schedStartDate}
+                                onChange={(e) => setSchedStartDate(e.target.value)}
+                                className="h-8 text-xs bg-white border-[#E2E8F0] rounded-md text-slate-700 [color-scheme:light]"
+                              />
+                            </div>
+                            <div>
+                              <label className="block text-[9px] font-bold text-slate-455 uppercase tracking-wider mb-1">End Date</label>
+                              <Input
+                                type="date"
+                                value={schedEndDate}
+                                onChange={(e) => setSchedEndDate(e.target.value)}
+                                className="h-8 text-xs bg-white border-[#E2E8F0] rounded-md text-slate-700 [color-scheme:light]"
+                              />
+                            </div>
+                          </div>
+                        </div>
+
+                        {/* Recipients Selection */}
+                        <div className="space-y-2">
+                          <label className="block text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-1">
+                            Select Station to Load Recipients
+                          </label>
+                          <select
+                            onChange={(e) => {
+                              const val = e.target.value;
+                              if (val) {
+                                const emails = stationSelectedEmails[val] || [];
+                                setSchedRecipients(emails.join(", "));
+                              } else {
+                                setSchedRecipients("");
+                              }
+                            }}
+                            defaultValue=""
+                            className="w-full h-9 bg-slate-50 border border-[#E2E8F0] rounded-lg text-slate-700 text-xs px-3 focus:outline-none focus:ring-1 focus:ring-violet-500 font-semibold cursor-pointer transition-colors hover:bg-slate-100/80"
+                          >
+                            <option value="">-- Choose a Station --</option>
+                            {STATIONS.map((s) => {
+                              const count = (stationSelectedEmails[s.code] || []).length;
+                              return (
+                                <option key={s.code} value={s.code}>
+                                  {s.name} ({count} users)
+                                </option>
+                              );
+                            })}
+                            <option value="OTHER">Corporate/OTHER ({(stationSelectedEmails["OTHER"] || []).length} users)</option>
                           </select>
-                        </div>
-                      )}
 
-                      {/* Time */}
-                      <div>
-                        <label className="block text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-1">Send Time (24h Local)</label>
-                        <Input
-                          type="time"
-                          value={schedTime}
-                          onChange={(e) => setSchedTime(e.target.value)}
-                          className="h-8 bg-slate-50 border-[#E2E8F0] rounded-lg text-slate-700 [color-scheme:light] font-semibold"
-                        />
-                      </div>
-
-                      {/* Custom date range (Optional) */}
-                      <div className="p-3 bg-slate-50 rounded-lg border border-slate-200 space-y-3">
-                        <div className="flex items-center justify-between">
-                          <span className="text-[10px] font-bold text-slate-500 uppercase tracking-wider">Custom Date Range (Optional)</span>
-                          <span className="text-[8px] bg-slate-200 text-slate-600 px-1.5 py-0.5 rounded font-black uppercase tracking-wider">Overrides Relative Period</span>
+                          {/* Visual Recipients List */}
+                          {schedRecipients.split(",").map(r => r.trim()).filter(Boolean).length > 0 && (
+                            <div className="space-y-1.5 mt-2">
+                              <p className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">Loaded Recipients</p>
+                              <div className="flex flex-wrap gap-1 p-2 border border-dashed border-slate-200 rounded-lg bg-slate-50 max-h-32 overflow-y-auto shadow-inner">
+                                {schedRecipients
+                                  .split(",")
+                                  .map(r => r.trim())
+                                  .filter(Boolean)
+                                  .map((email) => (
+                                    <Badge
+                                      key={email}
+                                      className="bg-white hover:bg-slate-50 text-slate-750 border border-[#CBD5E0] font-semibold text-[9px] px-2 py-0.5 rounded-full flex items-center gap-1 shadow-sm"
+                                    >
+                                      <span className="truncate max-w-[180px]">{email}</span>
+                                      <X
+                                        className="w-2.5 h-2.5 text-slate-400 hover:text-slate-650 cursor-pointer shrink-0"
+                                        onClick={() => {
+                                          const remaining = schedRecipients
+                                            .split(",")
+                                            .map(r => r.trim())
+                                            .filter(x => x && x !== email);
+                                          setSchedRecipients(remaining.join(", "));
+                                        }}
+                                      />
+                                    </Badge>
+                                  ))}
+                              </div>
+                            </div>
+                          )}
                         </div>
-                        <div className="grid grid-cols-2 gap-2">
-                          <div>
-                            <label className="block text-[9px] font-bold text-slate-450 uppercase tracking-wider mb-1">Start Date</label>
-                            <Input
-                              type="date"
-                              value={schedStartDate}
-                              onChange={(e) => setSchedStartDate(e.target.value)}
-                              className="h-8 text-xs bg-white border-[#E2E8F0] rounded-md text-slate-700 [color-scheme:light]"
-                            />
+
+                        {/* Feedback status banner */}
+                        {schedStatusMessage && (
+                          <div className={`p-2 rounded-lg text-[10px] font-bold border ${schedStatusSuccess ? "bg-emerald-50 border-emerald-200 text-emerald-700" : "bg-rose-50 border-rose-200 text-rose-700"}`}>
+                            {schedStatusMessage}
                           </div>
-                          <div>
-                            <label className="block text-[9px] font-bold text-slate-455 uppercase tracking-wider mb-1">End Date</label>
-                            <Input
-                              type="date"
-                              value={schedEndDate}
-                              onChange={(e) => setSchedEndDate(e.target.value)}
-                              className="h-8 text-xs bg-white border-[#E2E8F0] rounded-md text-slate-700 [color-scheme:light]"
-                            />
-                          </div>
-                        </div>
+                        )}
+
+                        {/* Submit */}
+                        <Button
+                          onClick={handleCreateSchedule}
+                          disabled={schedIsCreating}
+                          className="w-full h-9 bg-violet-600 hover:bg-violet-700 text-white font-bold rounded-lg transition-colors flex items-center justify-center gap-1.5 shadow"
+                        >
+                          {schedIsCreating ? "Saving Schedule..." : "Save Schedule"}
+                        </Button>
                       </div>
-
-                      {/* Recipients list */}
-                      <div>
-                        <div className="flex justify-between items-center mb-1">
-                          <label className="block text-[10px] font-bold text-slate-400 uppercase tracking-wider">Recipients (comma-separated)</label>
-                        </div>
-                        <Input
-                          type="text"
-                          value={schedRecipients}
-                          onChange={(e) => setSchedRecipients(e.target.value)}
-                          placeholder="shashini.hq@dartglobal.com, user2@domain.com"
-                          className="h-8 bg-slate-50 border-[#E2E8F0] rounded-lg text-slate-700 text-xs"
-                        />
-                      </div>
-
-                      {/* Feedback status banner */}
-                      {schedStatusMessage && (
-                        <div className={`p-2 rounded-lg text-[10px] font-bold border ${schedStatusSuccess ? "bg-emerald-50 border-emerald-200 text-emerald-700" : "bg-rose-50 border-rose-200 text-rose-700"}`}>
-                          {schedStatusMessage}
-                        </div>
-                      )}
-
-                      {/* Submit */}
-                      <Button
-                        onClick={handleCreateSchedule}
-                        disabled={schedIsCreating}
-                        className="w-full h-9 bg-violet-600 hover:bg-violet-700 text-white font-bold rounded-lg transition-colors flex items-center justify-center gap-1.5 shadow"
-                      >
-                        {schedIsCreating ? "Saving Schedule..." : "Save Schedule"}
-                      </Button>
                     </div>
                   </div>
-                </div>
+                )}
 
                 {/* ── RIGHT COL: Active Schedules List ── */}
-                <div className="col-span-12 lg:col-span-7">
-                  <div className="admin-card p-6 bg-white border border-slate-200 rounded-xl shadow-sm relative overflow-hidden flex flex-col justify-between min-h-[400px]">
-                    <div>
-                      <div className="flex items-center justify-between mb-5 pb-4 border-b border-[#EDF2F7]">
-                        <div className="flex items-center gap-2.5">
-                          <div className="w-8 h-8 rounded-lg bg-violet-50 flex items-center justify-center">
-                            <Clock className="w-4 h-4 text-violet-500" />
+                {schedActiveTab === "list" && (
+                  <div className="col-span-12">
+                    <div className="admin-card p-6 bg-white border border-slate-200 rounded-xl shadow-sm relative overflow-hidden flex flex-col justify-between min-h-[400px]">
+                      <div>
+                        <div className="flex items-center justify-between mb-5 pb-4 border-b border-[#EDF2F7]">
+                          <div className="flex items-center gap-2.5">
+                            <div className="w-8 h-8 rounded-lg bg-violet-50 flex items-center justify-center">
+                              <Clock className="w-4 h-4 text-violet-500" />
+                            </div>
+                            <div>
+                              <h3 className="text-sm font-bold text-[#1A202C]">Active Schedules</h3>
+                              <p className="text-[10.5px] text-slate-400">Currently configured periodic mailers</p>
+                            </div>
                           </div>
-                          <div>
-                            <h3 className="text-sm font-bold text-[#1A202C]">Active Schedules</h3>
-                            <p className="text-[10.5px] text-slate-400">Currently configured periodic mailers</p>
-                          </div>
+                          <Badge variant="outline" className="border-violet-200 text-violet-750 bg-violet-50 text-[10px] font-bold">
+                            {schedules.length} configured
+                          </Badge>
                         </div>
-                        <Badge variant="outline" className="border-violet-200 text-violet-750 bg-violet-50 text-[10px] font-bold">
-                          {schedules.length} configured
-                        </Badge>
-                      </div>
 
-                      <div className="space-y-3 max-h-[500px] overflow-y-auto pr-1">
-                        {schedulerLoading ? (
-                          <div className="flex flex-col gap-2">
-                            <Skeleton className="h-20 w-full bg-slate-50" />
-                            <Skeleton className="h-20 w-full bg-slate-50" />
-                          </div>
-                        ) : schedules.length === 0 ? (
-                          <div className="text-center py-12 bg-slate-50 rounded-xl border border-dashed border-slate-200">
-                            <p className="text-xs text-slate-400 font-medium italic">No schedules configured yet.</p>
-                            <p className="text-[10.5px] text-slate-400 mt-1">Configure one using the form on the left.</p>
-                          </div>
-                        ) : (
-                          schedules.map((s) => {
-                            const filters = s.filters || {};
-                            const stationLabel = filters.company_code ? `${filters.country} (${filters.company_code})` : "Global (All)";
+                        <div className="space-y-3 max-h-[500px] overflow-y-auto pr-1">
+                          {schedulerLoading ? (
+                            <div className="flex flex-col gap-2">
+                              <Skeleton className="h-20 w-full bg-slate-50" />
+                              <Skeleton className="h-20 w-full bg-slate-50" />
+                            </div>
+                          ) : schedules.length === 0 ? (
+                            <div className="text-center py-12 bg-slate-50 rounded-xl border border-dashed border-slate-200">
+                              <p className="text-xs text-slate-400 font-medium italic">No schedules configured yet.</p>
+                              <p className="text-[10.5px] text-slate-400 mt-1">Configure one using the form on the left.</p>
+                            </div>
+                          ) : (
+                            schedules.map((s) => {
+                              const filters = s.filters || {};
+                              const stationLabel = filters.company_code ? `${filters.country} (${filters.company_code})` : "Global (All)";
 
-                            let triggerDesc = "";
-                            if (s.frequency === "weekly") {
-                              const days = ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"];
-                              triggerDesc = `Weekly on ${days[s.day_of_week] || "Monday"} at ${s.time_of_day}`;
-                            } else if (s.frequency === "monthly") {
-                              triggerDesc = `Monthly on day ${s.day_of_month} at ${s.time_of_day}`;
-                            } else {
-                              triggerDesc = `Daily at ${s.time_of_day}`;
-                            }
+                              let triggerDesc = "";
+                              if (s.frequency === "weekly") {
+                                const days = ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"];
+                                triggerDesc = `Weekly on ${days[s.day_of_week] || "Monday"} at ${s.time_of_day}`;
+                              } else if (s.frequency === "monthly") {
+                                triggerDesc = `Monthly on day ${s.day_of_month} at ${s.time_of_day}`;
+                              } else {
+                                triggerDesc = `Daily at ${s.time_of_day}`;
+                              }
 
-                            return (
-                              <div key={s.id} className="p-4 bg-slate-50 border border-slate-200 rounded-xl hover:bg-slate-100/50 transition-colors flex flex-col justify-between gap-3">
-                                <div className="flex justify-between items-start gap-2">
-                                  <div>
-                                    <h4 className="text-xs font-bold text-slate-800">{stationLabel}</h4>
-                                    <p className="text-[10px] font-semibold text-slate-400 mt-0.5">{triggerDesc}</p>
-                                    {filters.start_date && filters.end_date && (
-                                      <div className="text-[9px] font-bold text-violet-600 mt-1 flex items-center gap-1">
-                                        📅 Range: {filters.start_date} to {filters.end_date}
-                                      </div>
-                                    )}
+                              return (
+                                <div key={s.id} className="p-4 bg-slate-50 border border-slate-200 rounded-xl hover:bg-slate-100/50 transition-colors flex flex-col justify-between gap-3">
+                                  <div className="flex justify-between items-start gap-2">
+                                    <div>
+                                      <h4 className="text-xs font-bold text-slate-800">{stationLabel}</h4>
+                                      <p className="text-[10px] font-semibold text-slate-400 mt-0.5">{triggerDesc}</p>
+                                      {filters.start_date && filters.end_date && (
+                                        <div className="text-[9px] font-bold text-violet-600 mt-1 flex items-center gap-1">
+                                          📅 Range: {filters.start_date} to {filters.end_date}
+                                        </div>
+                                      )}
+                                    </div>
+                                    <span className={`text-[9px] font-black px-1.5 py-0.5 rounded-full uppercase ${s.is_active ? "text-emerald-700 bg-emerald-100" : "text-slate-500 bg-slate-200"}`}>
+                                      {s.is_active ? "Active" : "Paused"}
+                                    </span>
                                   </div>
-                                  <span className={`text-[9px] font-black px-1.5 py-0.5 rounded-full uppercase ${s.is_active ? "text-emerald-700 bg-emerald-100" : "text-slate-500 bg-slate-200"}`}>
-                                    {s.is_active ? "Active" : "Paused"}
-                                  </span>
-                                </div>
 
-                                <div className="text-[9.5px] text-slate-450 bg-white border border-slate-200/60 p-2 rounded-lg max-h-16 overflow-y-auto">
-                                  <span className="font-bold text-slate-500">Recipients:</span> {s.recipient_email}
-                                </div>
+                                  <div className="text-[9.5px] text-slate-450 bg-white border border-slate-200/60 p-2 rounded-lg max-h-16 overflow-y-auto">
+                                    <span className="font-bold text-slate-500">Recipients:</span> {s.recipient_email}
+                                  </div>
 
-                                <div className="flex justify-between items-center border-t border-slate-200/60 pt-2 mt-1">
-                                  <button
-                                    onClick={() => handleToggleSchedule(s.id)}
-                                    className={`text-[9.5px] font-bold px-2 py-1 rounded transition-colors ${s.is_active ? "text-amber-700 bg-amber-50 hover:bg-amber-100" : "text-emerald-700 bg-emerald-50 hover:bg-emerald-100"}`}
-                                  >
-                                    {s.is_active ? "Pause" : "Activate"}
-                                  </button>
-
-                                  <div className="flex items-center gap-2">
+                                  <div className="flex justify-between items-center border-t border-slate-200/60 pt-2 mt-1">
                                     <button
-                                      onClick={() => handleRunScheduleNow(s.id)}
-                                      className="p-1 rounded bg-indigo-50 text-indigo-600 hover:bg-indigo-100 transition-colors"
-                                      title="Run Schedule Now"
+                                      onClick={() => handleToggleSchedule(s.id)}
+                                      className={`text-[9.5px] font-bold px-2 py-1 rounded transition-colors ${s.is_active ? "text-amber-700 bg-amber-50 hover:bg-amber-100" : "text-emerald-700 bg-emerald-50 hover:bg-emerald-100"}`}
                                     >
-                                      <Play className="w-3.5 h-3.5" />
+                                      {s.is_active ? "Pause" : "Activate"}
                                     </button>
+
+                                    <div className="flex items-center gap-2">
+                                      <button
+                                        onClick={() => handleRunScheduleNow(s.id)}
+                                        className="p-1 rounded bg-indigo-50 text-indigo-600 hover:bg-indigo-100 transition-colors"
+                                        title="Run Schedule Now"
+                                      >
+                                        <Play className="w-3.5 h-3.5" />
+                                      </button>
+                                      <button
+                                        onClick={() => handleDeleteSchedule(s.id)}
+                                        className="p-1 rounded bg-rose-50 text-rose-600 hover:bg-rose-100 transition-colors"
+                                        title="Delete"
+                                      >
+                                        <Trash2 className="w-3.5 h-3.5" />
+                                      </button>
+                                    </div>
+                                  </div>
+                                </div>
+                              );
+                            })
+                          )}
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                )}
+              </div>
+            </div>
+          )}
+
+          {/* ── USERS SECTION ── */}
+          {activeSection === "users" && (
+            <div className="max-w-[1380px] mx-auto px-6 py-8 space-y-8 animate-in fade-in-0 duration-200">
+              {/* Header */}
+              <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 border-b border-slate-200 pb-4 mb-6">
+                <div>
+                  <div className="flex items-center gap-2.5 mb-1">
+                    <Users className="w-5 h-5 text-[#3182CE]" />
+                    <h2 className="text-xl font-extrabold text-[#1A202C] tracking-tight">System Users & Recipients</h2>
+                  </div>
+                  <p className="text-sm text-slate-400">View and manage recipients filtered by station, stored in the database.</p>
+                </div>
+              </div>
+
+              <div className="grid grid-cols-12 gap-6">
+                {/* Users List (Full Width) */}
+                <div className="col-span-12 space-y-4">
+                  <div className="admin-card p-6 bg-white border border-slate-200 rounded-xl shadow-sm">
+                    {/* Toolbar */}
+                    <div className="flex flex-col sm:flex-row gap-3 justify-between items-center pb-4 border-b border-[#EDF2F7] mb-4">
+                      <div className="flex items-center gap-2.5">
+                        <div className="w-8 h-8 rounded-lg bg-teal-50 flex items-center justify-center">
+                          <Users className="w-4 h-4 text-teal-600" />
+                        </div>
+                        <div>
+                          <h3 className="text-sm font-bold text-[#1A202C]">Recipients List</h3>
+                          <p className="text-[10.5px] text-slate-400">Manage saved recipients in the database</p>
+                        </div>
+                      </div>
+                      <button
+                        onClick={() => fetchDbUsers(supabase)}
+                        className="p-1.5 rounded-lg hover:bg-slate-100 text-slate-400 hover:text-slate-655 transition-colors"
+                        title="Refresh list"
+                      >
+                        <RefreshCw className={`w-4 h-4 ${dbUsersLoading ? "animate-spin" : ""}`} />
+                      </button>
+                    </div>
+
+                    {/* Search and Filter */}
+                    <div className="flex flex-col sm:flex-row gap-3 mb-4">
+                      <Input
+                        placeholder="Search by name or email..."
+                        value={dbUserSearch}
+                        onChange={(e) => setDbUserSearch(e.target.value)}
+                        className="h-9 text-xs bg-white border-[#CBD5E0] rounded-lg text-slate-700 flex-1"
+                      />
+                      <select
+                        value={dbUserStationFilter}
+                        onChange={(e) => setDbUserStationFilter(e.target.value)}
+                        className="h-9 px-3 bg-white border border-slate-200 rounded-lg text-slate-700 text-xs font-semibold focus:outline-none focus:ring-1 focus:ring-blue-500 w-44"
+                      >
+                        <option value="ALL">All Stations</option>
+                        <option value="Global">Global</option>
+                        {STATIONS.map((s) => (
+                          <option key={s.code} value={s.code}>{s.name} ({s.code})</option>
+                        ))}
+                        <option value="OTHER">Corporate / Other</option>
+                      </select>
+                    </div>
+
+                    {/* Datatable */}
+                    <div className="overflow-x-auto max-h-[450px]">
+                      {dbUsersLoading ? (
+                        <div className="py-12 flex flex-col items-center gap-3 text-slate-400">
+                          <RefreshCw className="w-6 h-6 animate-spin text-[#3182CE]" />
+                          <p className="text-xs font-medium">Fetching database users...</p>
+                        </div>
+                      ) : (
+                        <table className="w-full text-left text-xs border-collapse">
+                          <thead>
+                            <tr className="border-b border-[#E2E8F0] text-slate-400 uppercase font-bold text-[10px] tracking-wider bg-slate-50/50">
+                              <th className="px-4 py-3">Display Name</th>
+                              <th className="px-4 py-3">Email Address</th>
+                              <th className="px-4 py-3">Station</th>
+                              <th className="px-4 py-3">Created At</th>
+                              <th className="px-4 py-3 text-center">Actions</th>
+                            </tr>
+                          </thead>
+                          <tbody className="divide-y divide-[#F1F5F9]">
+                            {dbUsers
+                              .filter((u) => {
+                                // Search filter
+                                const searchQ = dbUserSearch.toLowerCase().trim();
+                                const nameMatch = (u.display_name || "").toLowerCase().includes(searchQ);
+                                const emailMatch = (u.email || "").toLowerCase().includes(searchQ);
+                                if (searchQ && !nameMatch && !emailMatch) return false;
+
+                                // Station filter
+                                if (dbUserStationFilter !== "ALL" && u.station !== dbUserStationFilter) return false;
+                                return true;
+                              })
+                              .map((u) => (
+                                <tr key={u.id} className="hover:bg-slate-50/50 transition-colors">
+                                  <td className="px-4 py-3 font-semibold text-slate-700">{u.display_name || "—"}</td>
+                                  <td className="px-4 py-3 font-medium text-slate-500">{u.email}</td>
+                                  <td className="px-4 py-3">
+                                    <Badge className="bg-[#EBF8FF] text-[#2B6CB0] border border-[#BEE3F8] font-bold text-[9px] px-2 py-0.5 rounded-full uppercase">
+                                      {u.station || "Global"}
+                                    </Badge>
+                                  </td>
+                                  <td className="px-4 py-3 text-slate-400 tabular-nums">
+                                    {u.created_at ? new Date(u.created_at).toLocaleDateString() : "—"}
+                                  </td>
+                                  <td className="px-4 py-3 text-center">
                                     <button
-                                      onClick={() => handleDeleteSchedule(s.id)}
-                                      className="p-1 rounded bg-rose-50 text-rose-600 hover:bg-rose-100 transition-colors"
-                                      title="Delete"
+                                      onClick={async () => {
+                                        if (!confirm(`Are you sure you want to delete ${u.email}?`)) return;
+                                        try {
+                                          const { error } = await supabase
+                                            .from("users")
+                                            .delete()
+                                            .eq("id", u.id);
+                                          if (error) throw error;
+                                          fetchDbUsers(supabase);
+                                        } catch (err: any) {
+                                          alert(err.message || "Failed to delete user.");
+                                        }
+                                      }}
+                                      className="p-1 rounded hover:bg-rose-50 text-rose-500 hover:text-rose-600 transition-colors"
+                                      title="Delete Recipient"
                                     >
                                       <Trash2 className="w-3.5 h-3.5" />
                                     </button>
-                                  </div>
-                                </div>
-                              </div>
-                            );
-                          })
-                        )}
-                      </div>
+                                  </td>
+                                </tr>
+                              ))}
+                            {dbUsers.length === 0 && (
+                              <tr>
+                                <td colSpan={5} className="text-center py-12 text-slate-400 font-medium italic">
+                                  No database users configured.
+                                </td>
+                              </tr>
+                            )}
+                          </tbody>
+                        </table>
+                      )}
                     </div>
                   </div>
                 </div>
@@ -3589,7 +3769,7 @@ ORDER BY vt.ETD DESC, ROUND(SUM(vs.Revenue_USD), 2) DESC`);
           )}
 
           {/* ── FOUR FINANCIAL KPI CARDS ROW (Dashboard + Weekly Reports only) ── */}
-          {activeSection !== "admin" && activeSection !== "email-scheduling" && (
+          {activeSection !== "admin" && activeSection !== "email-scheduling" && activeSection !== "users" && (
             <div className="max-w-[1380px] mx-auto px-6 mt-6 grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
 
               {/* Card 1: Revenue */}
@@ -3663,7 +3843,7 @@ ORDER BY vt.ETD DESC, ROUND(SUM(vs.Revenue_USD), 2) DESC`);
           )}
 
           {/* ── MAIN DASHBOARD CANVAS (DIVIDED SEPARATELY FOR WEEKLY & MONTHLY) ── */}
-          {activeSection !== "admin" && activeSection !== "email-scheduling" && (
+          {activeSection !== "admin" && activeSection !== "email-scheduling" && activeSection !== "users" && (
             <div className="max-w-[1380px] mx-auto px-6 mt-6 space-y-12">
 
               {/* ── CHAPTER 1: WEEKLY OPERATIONAL PERFORMANCE ── */}
@@ -3765,8 +3945,8 @@ ORDER BY vt.ETD DESC, ROUND(SUM(vs.Revenue_USD), 2) DESC`);
                           <h4 className="text-sm font-bold text-slate-800 mt-0.5">Top 10 Airlines Tonnage Share</h4>
                         </div>
                         <span className={`text-xs font-bold px-2 py-0.5 rounded-full border ${activeSection === "monthly-reports"
-                            ? "text-emerald-700 bg-emerald-50 border-emerald-100"
-                            : "text-indigo-600 bg-indigo-50 border-indigo-100"
+                          ? "text-emerald-700 bg-emerald-50 border-emerald-100"
+                          : "text-indigo-600 bg-indigo-50 border-indigo-100"
                           }`}>
                           {activeSection === "monthly-reports" ? "Week-by-Week Stack" : "Day-by-Day Stack"}
                         </span>
@@ -3786,7 +3966,7 @@ ORDER BY vt.ETD DESC, ROUND(SUM(vs.Revenue_USD), 2) DESC`);
                             <ResponsiveContainer width="100%" height="100%">
                               <BarChart
                                 data={chartData}
-                                margin={{ top: 5, right: 10, left: 10, bottom: activeSection === "monthly-reports" ? 35 : (chartData.length > 10 ? 40 : 20) }}
+                                margin={{ top: 25, right: 10, left: 10, bottom: activeSection === "monthly-reports" ? 35 : (chartData.length > 10 ? 40 : 20) }}
                               >
                                 <CartesianGrid strokeDasharray="3 3" stroke="#EDF2F7" vertical={false} horizontal={true} />
                                 <XAxis
