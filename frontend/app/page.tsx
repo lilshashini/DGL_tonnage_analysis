@@ -515,36 +515,41 @@ export default function Dashboard() {
 
   // Synchronize database users to station selected emails
   useEffect(() => {
-    if (dbUsers.length > 0) {
-      setStationSelectedEmails((prev) => {
-        const updated = { ...prev };
-        const stationGroups: Record<string, string[]> = {};
-        dbUsers.forEach((u) => {
-          if (u.station) {
-            if (!stationGroups[u.station]) {
-              stationGroups[u.station] = [];
+    setStationSelectedEmails((prev) => {
+      const updated = { ...prev };
+      const stationGroups: Record<string, string[]> = {};
+      dbUsers.forEach((u) => {
+        if (u.station) {
+          const stations = u.station.split(",").map((s: string) => s.trim()).filter(Boolean);
+          stations.forEach((stationCode: string) => {
+            if (!stationGroups[stationCode]) {
+              stationGroups[stationCode] = [];
             }
-            if (!stationGroups[u.station].includes(u.email)) {
-              stationGroups[u.station].push(u.email);
+            if (!stationGroups[stationCode].includes(u.email)) {
+              stationGroups[stationCode].push(u.email);
             }
-          }
-        });
-
-        STATIONS.forEach((s) => {
-          if (stationGroups[s.code]) {
-            updated[s.code] = stationGroups[s.code];
-          } else if (!updated[s.code] && stationDefaultRecipients[s.code]) {
-            updated[s.code] = stationDefaultRecipients[s.code];
-          }
-        });
-
-        if (stationGroups["OTHER"]) {
-          updated["OTHER"] = stationGroups["OTHER"];
+          });
         }
-
-        return updated;
       });
-    }
+
+      STATIONS.forEach((s) => {
+        if (stationGroups[s.code]) {
+          updated[s.code] = stationGroups[s.code];
+        } else if (dbUsers.length > 0) {
+          updated[s.code] = [];
+        } else {
+          updated[s.code] = stationDefaultRecipients[s.code] || [];
+        }
+      });
+
+      if (stationGroups["OTHER"]) {
+        updated["OTHER"] = stationGroups["OTHER"];
+      } else {
+        updated["OTHER"] = [];
+      }
+
+      return updated;
+    });
   }, [dbUsers, stationDefaultRecipients]);
 
   // --- SCHEDULER STATES ---
@@ -1597,30 +1602,68 @@ ORDER BY vt.ETD DESC, ROUND(SUM(vs.Revenue_USD), 2) DESC;
     setStationEmailSuccess(prev => ({ ...prev, [stationCode]: null }));
 
     try {
-      const currentDbUsers = dbUsers.filter(u => u.station === stationCode);
+      const currentDbUsers = dbUsers.filter(u => {
+        if (!u.station) return false;
+        const stations = u.station.split(",").map((s: string) => s.trim()).filter(Boolean);
+        return stations.includes(stationCode);
+      });
       const currentDbEmails = currentDbUsers.map(u => u.email);
       const emailsToRemove = currentDbEmails.filter(e => !emails.includes(e));
       const emailsToUpsert = emails;
 
-      for (const email of emailsToRemove) {
-        const user = dbUsers.find(u => u.email === email);
-        if (user) {
-          const { error } = await supabase
-            .from("users")
-            .update({ station: "Global" })
-            .eq("email", email);
-          if (error) console.error("Error removing user from station:", error);
+      // Helper to compute the combined station string for a given email
+      const getNewStationValue = (email: string, targetStation: string, removing: boolean) => {
+        const stations: string[] = [];
+        
+        STATIONS.forEach(s => {
+          const isTarget = s.code === targetStation;
+          const isSelected = (stationSelectedEmails[s.code] || []).includes(email);
+          if (isTarget) {
+            if (!removing) {
+              stations.push(s.code);
+            }
+          } else {
+            if (isSelected) {
+              stations.push(s.code);
+            }
+          }
+        });
+        
+        const isTargetOther = targetStation === "OTHER";
+        const isSelectedOther = (stationSelectedEmails["OTHER"] || []).includes(email);
+        if (isTargetOther) {
+          if (!removing) {
+            stations.push("OTHER");
+          }
+        } else {
+          if (isSelectedOther) {
+            stations.push("OTHER");
+          }
         }
+        
+        return stations.length > 0 ? stations.join(", ") : "Global";
+      };
+
+      for (const email of emailsToRemove) {
+        const newStationValue = getNewStationValue(email, stationCode, true);
+        const displayName = orgUsers.find(u => u.email === email)?.displayName || email.split("@")[0];
+        
+        const { error } = await supabase
+          .from("users")
+          .update({ station: newStationValue, display_name: displayName })
+          .eq("email", email);
+        if (error) console.error("Error removing user from station:", error);
       }
 
       for (const email of emailsToUpsert) {
         const existingUser = dbUsers.find(u => u.email === email);
         const displayName = orgUsers.find(u => u.email === email)?.displayName || email.split("@")[0];
+        const newStationValue = getNewStationValue(email, stationCode, false);
 
         if (existingUser) {
           const { error } = await supabase
             .from("users")
-            .update({ station: stationCode, display_name: displayName })
+            .update({ station: newStationValue, display_name: displayName })
             .eq("email", email);
           if (error) throw error;
         } else {
@@ -1631,7 +1674,7 @@ ORDER BY vt.ETD DESC, ROUND(SUM(vs.Revenue_USD), 2) DESC;
               id: newId,
               email: email,
               display_name: displayName,
-              station: stationCode
+              station: newStationValue
             });
           if (error) throw error;
         }
@@ -3713,7 +3756,10 @@ ORDER BY vt.ETD DESC, ROUND(SUM(vs.Revenue_USD), 2) DESC`);
                                 if (searchQ && !nameMatch && !emailMatch) return false;
 
                                 // Station filter
-                                if (dbUserStationFilter !== "ALL" && u.station !== dbUserStationFilter) return false;
+                                if (dbUserStationFilter !== "ALL") {
+                                  const stations = (u.station || "").split(",").map((s: string) => s.trim()).filter(Boolean);
+                                  if (!stations.includes(dbUserStationFilter)) return false;
+                                }
                                 return true;
                               })
                               .map((u) => (

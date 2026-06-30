@@ -1209,6 +1209,25 @@ def api_create_schedule(req: ScheduleCreateRequest, current_user: dict = Depends
         raise HTTPException(status_code=400, detail="time_of_day must be in 'HH:MM' 24-hour format")
 
     try:
+        # Resolve created_by ID from public.users to satisfy foreign key constraint
+        created_by_id = None
+        admin_email = current_user.get("email")
+        if admin_email and SUPABASE_URL and SUPABASE_KEY:
+            try:
+                db_headers = {
+                    "apikey": SUPABASE_KEY,
+                    "Authorization": f"Bearer {SUPABASE_KEY}"
+                }
+                user_lookup_resp = requests.get(
+                    f"{SUPABASE_URL}/rest/v1/users?email=eq.{admin_email}&select=id",
+                    headers=db_headers,
+                    timeout=5
+                )
+                if user_lookup_resp.status_code == 200 and len(user_lookup_resp.json()) > 0:
+                    created_by_id = user_lookup_resp.json()[0].get("id")
+            except Exception as lookup_err:
+                print(f"Warning: Could not resolve admin email in public.users: {lookup_err}")
+
         schedule_id = str(uuid.uuid4())
         save_schedule(
             schedule_id=schedule_id,
@@ -1219,7 +1238,7 @@ def api_create_schedule(req: ScheduleCreateRequest, current_user: dict = Depends
             time_of_day=req.time_of_day,
             filters_dict=req.filters,
             is_active=1 if req.is_active else 0,
-            created_by=current_user.get("id")
+            created_by=created_by_id
         )
 
         config = get_schedule(schedule_id)
