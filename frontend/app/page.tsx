@@ -49,7 +49,7 @@ const formatNumber = (val: number | null | undefined) => {
 
 // Customized Pie Chart Colors matching user's image
 const PIE_COLORS = ["#4299E1", "#81E6D9", "#CBD5E0", "#5A67D8", "#ED64A6"];
-const TEN_COLORS = ["#4299E1", "#319795", "#ED64A6", "#5A67D8", "#81E6D9", "#ED8936", "#ECC94B", "#48BB78", "#9F7AEA", "#CBD5E0"];
+const TEN_COLORS = ["#4299E1", "#319795", "#ED64A6", "#5A67D8", "#81E6D9", "#ED8936", "#ECC94B", "#48BB78", "#9F7AEA", "#718096"];
 
 // Branded airline colors — matched by lowercase substring of airline name
 const AIRLINE_COLORS: { [key: string]: string } = {

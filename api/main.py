@@ -59,6 +59,30 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
+def extract_station_info_from_sql(custom_sql: str) -> tuple[Optional[str], Optional[str]]:
+    """
+    Extracts (company_code, country) from a SQL query string.
+    Looks for pattern 'Company = <value>' and 'ConLoadPortCountryName = <value>'
+    """
+    if not custom_sql:
+        return None, None
+        
+    import re
+    company_code = None
+    country = None
+    
+    # Matches: vs.Company = 'CMB' or Company = 'CMB' or Company='CMB'
+    company_match = re.search(r"(?:[a-zA-Z0-9_]+\.)?Company\s*=\s*'([^']+)'", custom_sql, re.IGNORECASE)
+    if company_match:
+        company_code = company_match.group(1)
+        
+    country_match = re.search(r"(?:[a-zA-Z0-9_]+\.)?ConLoadPortCountryName\s*=\s*'([^']+)'", custom_sql, re.IGNORECASE)
+    if country_match:
+        country = country_match.group(1)
+        
+    return company_code, country
+
+
 SUPABASE_URL = os.environ.get("SUPABASE_URL", "")
 SUPABASE_KEY = os.environ.get("SUPABASE_KEY", "")
 
@@ -365,14 +389,24 @@ def process_pdf_and_email(req: ReportRequest):
         query_id = str(uuid.uuid4())
         query_cache[query_id] = req.custom_sql
         
+    # Resolve company_code and country from SQL if in custom-sql mode
+    company_val = req.company_code
+    country_val = req.country
+    if req.mode == "custom-sql" and req.custom_sql:
+        sql_company, sql_country = extract_station_info_from_sql(req.custom_sql)
+        if not company_val and sql_company:
+            company_val = sql_company
+        if not country_val and sql_country:
+            country_val = sql_country
+
     try:
         generate_dashboard_pdf(
             start_date=req.start_date,
             end_date=req.end_date,
-            country=req.country,
+            country=country_val,
             airline=req.airline,
             output_path=temp_pdf_path,
-            company_code=req.company_code,
+            company_code=company_val,
             origin_city=req.origin_city,
             destination_country=req.destination_country,
             destination_city=req.destination_city,
@@ -389,14 +423,25 @@ def process_pdf_and_email(req: ReportRequest):
         )
         # Format a meaningful subject and body based on request filters
         station_label = "Global"
-        if req.country and req.company_code:
-            station_label = f"{req.country} ({req.company_code})"
-        elif req.country:
-            station_label = req.country
-        elif req.company_code:
-            station_label = req.company_code
-            if req.company_code == "OTHER":
-                station_label = "Corporate / Other"
+        STATION_NAMES = {
+            "CMB": "Colombo (Sri Lanka)",
+            "IND": "India",
+            "VNM": "Viet Nam",
+            "DAC": "Bangladesh",
+            "PKI": "Pakistan",
+            "NYC": "United States",
+            "OTHER": "Corporate / Other"
+        }
+        if country_val and company_val:
+            codes = [c.strip() for c in company_val.split(",") if c.strip()]
+            resolved_names = [STATION_NAMES.get(c, c) for c in codes]
+            station_label = f"{country_val} ({', '.join(resolved_names)})"
+        elif country_val:
+            station_label = country_val
+        elif company_val:
+            codes = [c.strip() for c in company_val.split(",") if c.strip()]
+            resolved_names = [STATION_NAMES.get(c, c) for c in codes]
+            station_label = ", ".join(resolved_names)
 
         date_range_label = ""
         if req.start_date and req.end_date:
@@ -410,7 +455,7 @@ def process_pdf_and_email(req: ReportRequest):
             f"Best Regards,\n"
             f"BI Support Team"
         )
-        attachment_name = f"Weekly_Tonnage_Report_{req.company_code or 'Global'}.pdf"
+        attachment_name = f"Weekly_Tonnage_Report_{company_val or 'Global'}.pdf"
 
         send_pdf_via_graph(
             pdf_path=temp_pdf_path,
@@ -828,14 +873,24 @@ def send_report(req: ReportRequest):
         query_id = str(uuid.uuid4())
         query_cache[query_id] = req.custom_sql
         
+    # Resolve company_code and country from SQL if in custom-sql mode
+    company_val = req.company_code
+    country_val = req.country
+    if req.mode == "custom-sql" and req.custom_sql:
+        sql_company, sql_country = extract_station_info_from_sql(req.custom_sql)
+        if not company_val and sql_company:
+            company_val = sql_company
+        if not country_val and sql_country:
+            country_val = sql_country
+
     try:
         generate_dashboard_pdf(
             start_date=req.start_date,
             end_date=req.end_date,
-            country=req.country,
+            country=country_val,
             airline=req.airline,
             output_path=temp_pdf_path,
-            company_code=req.company_code,
+            company_code=company_val,
             origin_city=req.origin_city,
             destination_country=req.destination_country,
             destination_city=req.destination_city,
@@ -861,12 +916,16 @@ def send_report(req: ReportRequest):
             "NYC": "United States",
             "OTHER": "Corporate / Other"
         }
-        if req.company_code:
-            codes = [c.strip() for c in req.company_code.split(",") if c.strip()]
+        if country_val and company_val:
+            codes = [c.strip() for c in company_val.split(",") if c.strip()]
+            resolved_names = [STATION_NAMES.get(c, c) for c in codes]
+            station_label = f"{country_val} ({', '.join(resolved_names)})"
+        elif country_val:
+            station_label = country_val
+        elif company_val:
+            codes = [c.strip() for c in company_val.split(",") if c.strip()]
             resolved_names = [STATION_NAMES.get(c, c) for c in codes]
             station_label = ", ".join(resolved_names)
-        elif req.country:
-            station_label = req.country
 
         date_range_label = ""
         if req.start_date and req.end_date:
@@ -880,7 +939,7 @@ def send_report(req: ReportRequest):
             f"Best Regards,\n"
             f"BI Support Team"
         )
-        attachment_name = f"Weekly_Tonnage_Report_{req.company_code or 'Global'}.pdf"
+        attachment_name = f"Weekly_Tonnage_Report_{company_val or 'Global'}.pdf"
 
         send_pdf_via_graph(
             pdf_path=temp_pdf_path,
@@ -1098,14 +1157,22 @@ ORDER BY vt.ETD DESC, ROUND(SUM(vs.Revenue_USD), 2) DESC;
         query_id = str(uuid.uuid4())
         query_cache[query_id] = custom_sql
         
+    # Resolve company_code and country from SQL if in custom-sql mode
+    if mode == "custom-sql" and custom_sql:
+        sql_company, sql_country = extract_station_info_from_sql(custom_sql)
+        if not company_val and sql_company:
+            company_val = sql_company
+        if not country_val and sql_country:
+            country_val = sql_country
+
     try:
         generate_dashboard_pdf(
             start_date=start_date,
             end_date=end_date,
-            country=filters.get("country"),
+            country=country_val or filters.get("country"),
             airline=filters.get("airline"),
             output_path=temp_pdf_path,
-            company_code=filters.get("company_code"),
+            company_code=company_val or filters.get("company_code"),
             origin_city=filters.get("origin_city"),
             destination_country=filters.get("destination_country"),
             destination_city=filters.get("destination_city"),
@@ -1131,12 +1198,16 @@ ORDER BY vt.ETD DESC, ROUND(SUM(vs.Revenue_USD), 2) DESC;
             "NYC": "United States",
             "OTHER": "Corporate / Other"
         }
-        if company_val:
+        if country_val and company_val:
+            codes = [c.strip() for c in company_val.split(",") if c.strip()]
+            resolved_names = [STATION_NAMES.get(c, c) for c in codes]
+            station_label = f"{country_val} ({', '.join(resolved_names)})"
+        elif country_val:
+            station_label = country_val
+        elif company_val:
             codes = [c.strip() for c in company_val.split(",") if c.strip()]
             resolved_names = [STATION_NAMES.get(c, c) for c in codes]
             station_label = ", ".join(resolved_names)
-        elif country_val:
-            station_label = country_val
                 
         subject = f"Scheduled Air Freight Tonnage Dashboard - {station_label} ({start_date} to {end_date})"
         body = (

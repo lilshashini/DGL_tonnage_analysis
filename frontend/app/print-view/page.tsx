@@ -34,7 +34,7 @@ const formatNumber = (val: number | null | undefined) => {
 };
 
 const PIE_COLORS = ["#4299E1", "#81E6D9", "#CBD5E0", "#5A67D8", "#ED64A6"];
-const TEN_COLORS = ["#4299E1", "#319795", "#ED64A6", "#5A67D8", "#81E6D9", "#ED8936", "#ECC94B", "#48BB78", "#9F7AEA", "#CBD5E0"];
+const TEN_COLORS = ["#4299E1", "#319795", "#ED64A6", "#5A67D8", "#81E6D9", "#ED8936", "#ECC94B", "#48BB78", "#9F7AEA", "#718096"];
 
 // Branded airline colors — matched by lowercase substring of airline name
 const AIRLINE_COLORS: { [key: string]: string } = {
@@ -264,12 +264,39 @@ function PrintViewContent() {
       });
       return branchNames.join(", ");
     }
-    if (companyCode && country) {
-      return `${country} (${companyCode})`;
-    } else if (companyCode) {
-      return companyCode === "OTHER" ? "Corporate / Other" : companyCode;
-    } else if (country) {
-      return country;
+
+    // Resolve from custom SQL if present
+    let resolvedCompanyCode = companyCode;
+    let resolvedCountry = country;
+
+    if (mode === "custom-sql" && sqlQuery) {
+      const companyMatch = sqlQuery.match(/(?:[a-zA-Z0-9_]+\.)?Company\s*=\s*['"]([^'"]+)['"]/i);
+      if (companyMatch && !resolvedCompanyCode) {
+        resolvedCompanyCode = companyMatch[1];
+      }
+      const countryMatch = sqlQuery.match(/(?:[a-zA-Z0-9_]+\.)?ConLoadPortCountryName\s*=\s*['"]([^'"]+)['"]/i);
+      if (countryMatch && !resolvedCountry) {
+        resolvedCountry = countryMatch[1];
+      }
+    }
+
+    const STATION_NAMES: Record<string, string> = {
+      "CMB": "Colombo (Sri Lanka)",
+      "IND": "India",
+      "VNM": "Viet Nam",
+      "DAC": "Bangladesh",
+      "PKI": "Pakistan",
+      "NYC": "United States",
+      "OTHER": "Corporate / Other"
+    };
+
+    if (resolvedCompanyCode && resolvedCountry) {
+      const resolvedCompany = STATION_NAMES[resolvedCompanyCode] || resolvedCompanyCode;
+      return `${resolvedCountry} (${resolvedCompany})`;
+    } else if (resolvedCompanyCode) {
+      return STATION_NAMES[resolvedCompanyCode] || resolvedCompanyCode;
+    } else if (resolvedCountry) {
+      return resolvedCountry;
     }
     return "Global";
   };
@@ -1202,23 +1229,50 @@ function PrintViewContent() {
 
                   {/* Legends Grid (2-column layout for 10 items) */}
                   <div className="grid grid-cols-2 gap-x-4 gap-y-0.5 mt-2 pr-1 border-t border-slate-100 pt-1.5 shrink-0">
-                    {top10Airlines.map((entry, idx) => {
-                      const pct = totalTop10Tonnage > 0 ? ((entry.tonnage / totalTop10Tonnage) * 100).toFixed(1) : "0.0";
+                    {(() => {
+                      const totalAllTonnage = data.reduce((sum: number, r: any) => sum + Number(r.Tonnage_Chargeable ?? r.Air_ChargebleWeight ?? r.Total_Tonnage ?? r.tonnage ?? 0), 0);
+                      const totalTop10Tonnage = top10Airlines.reduce((sum, item) => sum + item.tonnage, 0);
+                      const othersTonnage = totalAllTonnage > totalTop10Tonnage ? totalAllTonnage - totalTop10Tonnage : 0;
+                      
                       return (
-                        <div key={entry.name} className="flex items-center justify-between text-[9px] border-b border-slate-50 pb-0.5">
-                          <div className="flex items-center gap-1.5 min-w-0">
-                            <span className="w-1.5 h-1.5 rounded-full shrink-0" style={{ backgroundColor: getAirlineColor(entry.name, idx) }} />
-                            <span className="font-bold text-slate-700 truncate max-w-[160px]" title={entry.name}>
-                              {entry.name}
-                            </span>
-                          </div>
-                          <div className="flex items-center gap-1 shrink-0 text-right">
-                            <span className="font-bold text-[#2D3748] tabular-nums">{formatNumber(entry.tonnage)} kg</span>
-                            <span className="text-slate-400 font-medium">({pct}%)</span>
-                          </div>
-                        </div>
+                        <>
+                          {top10Airlines.map((entry, idx) => {
+                            const pct = totalAllTonnage > 0 ? ((entry.tonnage / totalAllTonnage) * 100).toFixed(1) : "0.0";
+                            return (
+                              <div key={entry.name} className="flex items-center justify-between text-[9px] border-b border-slate-50 pb-0.5">
+                                <div className="flex items-center gap-1.5 min-w-0">
+                                  <span className="w-1.5 h-1.5 rounded-full shrink-0" style={{ backgroundColor: getAirlineColor(entry.name, idx) }} />
+                                  <span className="font-bold text-slate-700 truncate max-w-[160px]" title={entry.name}>
+                                    {entry.name}
+                                  </span>
+                                </div>
+                                <div className="flex items-center gap-1 shrink-0 text-right">
+                                  <span className="font-bold text-[#2D3748] tabular-nums">{formatNumber(entry.tonnage)} kg</span>
+                                  <span className="text-slate-400 font-medium">({pct}%)</span>
+                                </div>
+                              </div>
+                            );
+                          })}
+                          {(() => {
+                            const othersPct = totalAllTonnage > 0 ? ((othersTonnage / totalAllTonnage) * 100).toFixed(1) : "0.0";
+                            return (
+                              <div key="Others" className="flex items-center justify-between text-[9px] border-b border-slate-50 pb-0.5">
+                                <div className="flex items-center gap-1.5 min-w-0">
+                                  <span className="w-1.5 h-1.5 rounded-full shrink-0 bg-[#CBD5E0]" />
+                                  <span className="font-bold text-slate-700 truncate max-w-[160px]" title="Others">
+                                    Others
+                                  </span>
+                                </div>
+                                <div className="flex items-center gap-1 shrink-0 text-right">
+                                  <span className="font-bold text-[#2D3748] tabular-nums">{formatNumber(othersTonnage)} kg</span>
+                                  <span className="text-slate-400 font-medium">({othersPct}%)</span>
+                                </div>
+                              </div>
+                            );
+                          })()}
+                        </>
                       );
-                    })}
+                    })()}
                   </div>
                 </div>
 
