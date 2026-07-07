@@ -245,6 +245,10 @@ function MultiSelect({
 
 
 export default function Dashboard() {
+  const formatTonnage = (val: number | null | undefined) => {
+    if (val == null || val === 0) return "-";
+    return val.toLocaleString("en-US", { minimumFractionDigits: 3, maximumFractionDigits: 3 });
+  };
   // Sidebar active section
   const [activeSection, setActiveSection] = useState<"dashboard" | "weekly-reports" | "monthly-reports" | "admin" | "email-scheduling" | "users">("dashboard");
 
@@ -1786,14 +1790,14 @@ ORDER BY vt.ETD DESC, ROUND(SUM(vs.Revenue_USD), 2) DESC;
     const pct = (val: number) => total > 0 ? (val / total) * 100 : 0;
 
     return [
-      { name: "Europe", tonnage: Number((tEurope / 1000).toFixed(1)), contribution: pct(tEurope) },
-      { name: "USA", tonnage: Number((tUSA / 1000).toFixed(1)), contribution: pct(tUSA) },
-      { name: "S.East Asia", tonnage: Number((tSEAsia / 1000).toFixed(1)), contribution: pct(tSEAsia) },
-      { name: "Africa", tonnage: Number((tAfrica / 1000).toFixed(1)), contribution: pct(tAfrica) },
-      { name: "India & Sub Cont.", tonnage: Number((tIndiaSub / 1000).toFixed(1)), contribution: pct(tIndiaSub) },
-      { name: "Mid East", tonnage: Number((tMidEast / 1000).toFixed(1)), contribution: pct(tMidEast) },
-      { name: "Australia", tonnage: Number((tAustralia / 1000).toFixed(1)), contribution: pct(tAustralia) },
-      { name: "Other Sectors", tonnage: Number((tOthers / 1000).toFixed(1)), contribution: pct(tOthers) },
+      { name: "Europe", tonnage: Number((tEurope / 1000).toFixed(3)), contribution: pct(tEurope) },
+      { name: "USA", tonnage: Number((tUSA / 1000).toFixed(3)), contribution: pct(tUSA) },
+      { name: "S.East Asia", tonnage: Number((tSEAsia / 1000).toFixed(3)), contribution: pct(tSEAsia) },
+      { name: "Africa", tonnage: Number((tAfrica / 1000).toFixed(3)), contribution: pct(tAfrica) },
+      { name: "India & Sub Cont.", tonnage: Number((tIndiaSub / 1000).toFixed(3)), contribution: pct(tIndiaSub) },
+      { name: "Mid East", tonnage: Number((tMidEast / 1000).toFixed(3)), contribution: pct(tMidEast) },
+      { name: "Australia", tonnage: Number((tAustralia / 1000).toFixed(3)), contribution: pct(tAustralia) },
+      { name: "Other Sectors", tonnage: Number((tOthers / 1000).toFixed(3)), contribution: pct(tOthers) },
     ];
   };
 
@@ -1804,23 +1808,23 @@ ORDER BY vt.ETD DESC, ROUND(SUM(vs.Revenue_USD), 2) DESC;
 
     const convertRow = (r: any) => ({
       name: r.Airline || "Unknown Carrier",
-      exp: Math.round(r.Air_Exp_Tong / 1000),
-      imp: Math.round(r.Air_Imp_Tong / 1000),
-      total: Math.round(r.Total_Tons / 1000),
-      europe: Math.round(r.Europe / 1000),
-      usa: Math.round(r.USA / 1000),
-      northAmericaOther: Math.round(r.North_America_Other / 1000),
-      centralAmerica: Math.round(r.Central_America / 1000),
-      southAmerica: Math.round(r.South_America / 1000),
-      middleEast: Math.round(r.Middle_East / 1000),
-      southEastAsia: Math.round(r.South_East_Asia / 1000),
-      indiaSubContinent: Math.round(r.India_Sub_Continent / 1000),
-      northernAsia: Math.round(r.Northern_Asia / 1000),
-      africa: Math.round(r.Africa / 1000),
-      southAfrica: Math.round(r.South_Africa / 1000),
-      australia: Math.round(r.Australia / 1000),
-      pacificIslands: Math.round(r.Pacific_Islands / 1000),
-      others: Math.round(r.Others / 1000)
+      exp: Number((r.Air_Exp_Tong / 1000).toFixed(3)),
+      imp: Number((r.Air_Imp_Tong / 1000).toFixed(3)),
+      total: Number((r.Total_Tons / 1000).toFixed(3)),
+      europe: Number((r.Europe / 1000).toFixed(3)),
+      usa: Number((r.USA / 1000).toFixed(3)),
+      northAmericaOther: Number((r.North_America_Other / 1000).toFixed(3)),
+      centralAmerica: Number((r.Central_America / 1000).toFixed(3)),
+      southAmerica: Number((r.South_America / 1000).toFixed(3)),
+      middleEast: Number((r.Middle_East / 1000).toFixed(3)),
+      southEastAsia: Number((r.South_East_Asia / 1000).toFixed(3)),
+      indiaSubContinent: Number((r.India_Sub_Continent / 1000).toFixed(3)),
+      northernAsia: Number((r.Northern_Asia / 1000).toFixed(3)),
+      africa: Number((r.Africa / 1000).toFixed(3)),
+      southAfrica: Number((r.South_Africa / 1000).toFixed(3)),
+      australia: Number((r.Australia / 1000).toFixed(3)),
+      pacificIslands: Number((r.Pacific_Islands / 1000).toFixed(3)),
+      others: Number((r.Others / 1000).toFixed(3))
     });
 
     const rows = top20.map(convertRow);
@@ -5373,28 +5377,32 @@ ORDER BY vt.ETD DESC, ROUND(SUM(vs.Revenue_USD), 2) DESC`);
                       </Badge>
                     </div>
 
-                    <div className="overflow-x-auto max-h-[450px]">
+                    <div className="overflow-x-auto">
                       <table className="w-full text-left text-xs border-collapse">
                         <thead>
                           <tr className="border-b border-[#E2E8F0] text-slate-500 uppercase font-bold text-[9px] tracking-wider bg-slate-50/50 sticky top-0 z-10">
-                            <th className="px-2 py-2 first:rounded-l-md">SL</th>
-                            <th className="px-2 py-2">CARRIER NAME</th>
-                            <th className="px-2 py-2 text-right bg-blue-50/40 text-blue-700">EXP</th>
-                            <th className="px-2 py-2 text-right bg-slate-100 font-extrabold text-slate-800">TOTAL</th>
-                            <th className="px-1 py-2 text-right">EUROPE</th>
-                            <th className="px-1 py-2 text-right">USA</th>
-                            <th className="px-1 py-2 text-right">N.AMER</th>
-                            <th className="px-1 py-2 text-right">C.AMER</th>
-                            <th className="px-1 py-2 text-right">S.AMER</th>
-                            <th className="px-1 py-2 text-right">M.EAST</th>
-                            <th className="px-1 py-2 text-right">S.E.ASIA</th>
-                            <th className="px-1 py-2 text-right">IND.SUB</th>
-                            <th className="px-1 py-2 text-right">N.ASIA</th>
-                            <th className="px-1 py-2 text-right">AFRICA</th>
-                            <th className="px-1 py-2 text-right">S.AFR</th>
-                            <th className="px-1 py-2 text-right">AUST</th>
-                            <th className="px-1 py-2 text-right">PACIFIC</th>
-                            <th className="px-1 py-2 text-right last:rounded-r-md">OTHERS</th>
+                            <th rowSpan={2} className="px-2 py-2 first:rounded-l-md border-r border-[#E2E8F0] align-middle text-center">SL</th>
+                            <th rowSpan={2} className="px-2 py-2 border-r border-[#E2E8F0] align-middle">CARRIER NAME</th>
+                            <th colSpan={2} className="px-2 py-1 text-center bg-slate-100/80 border-b border-r border-[#E2E8F0] text-slate-700 font-extrabold">TONNAGE (Tons)</th>
+                            <th colSpan={14} className="px-2 py-1 text-center text-slate-700 font-extrabold border-b border-[#E2E8F0]">GEOGRAPHICAL SECTOR TONNAGE (Tons)</th>
+                          </tr>
+                          <tr className="border-b border-[#E2E8F0] text-slate-500 uppercase font-bold text-[9px] tracking-wider bg-slate-50/50 sticky top-[28px] z-10">
+                            <th className="px-2 py-1 text-right bg-blue-50/40 text-blue-700 border-r border-[#E2E8F0]">EXP</th>
+                            <th className="px-2 py-1 text-right bg-slate-100 font-extrabold text-slate-800 border-r border-[#E2E8F0]">TOTAL</th>
+                            <th className="px-1 py-1 text-right">EUROPE</th>
+                            <th className="px-1 py-1 text-right">USA</th>
+                            <th className="px-1 py-1 text-right">NORTH AMERICA</th>
+                            <th className="px-1 py-1 text-right">CENTRAL AMERICA</th>
+                            <th className="px-1 py-1 text-right">SOUTH AMERICA</th>
+                            <th className="px-1 py-1 text-right">MIDDLE EAST</th>
+                            <th className="px-1 py-1 text-right">SOUTH EAST ASIA</th>
+                            <th className="px-1 py-1 text-right">INDIA & SUB CONTINENT</th>
+                            <th className="px-1 py-1 text-right">NORTHERN ASIA</th>
+                            <th className="px-1 py-1 text-right">AFRICA</th>
+                            <th className="px-1 py-1 text-right">SOUTH AFRICA</th>
+                            <th className="px-1 py-1 text-right">AUSTRALIA</th>
+                            <th className="px-1 py-1 text-right">PACIFIC</th>
+                            <th className="px-1 py-1 text-right last:rounded-r-md">OTHERS</th>
                           </tr>
                         </thead>
                         <tbody className="divide-y divide-[#F1F5F9]">
@@ -5412,22 +5420,22 @@ ORDER BY vt.ETD DESC, ROUND(SUM(vs.Revenue_USD), 2) DESC`);
                                 <tr key={i} className={`${isTotal ? "font-extrabold bg-slate-100 border-t-2 border-slate-350" : isOthers ? "font-bold bg-slate-50/50" : "hover:bg-slate-50/30 text-slate-700"}`}>
                                   <td className="px-2 py-1.5 text-slate-400 font-semibold">{isTotal ? "" : isOthers ? "" : i + 1}</td>
                                   <td className="px-2 py-1.5 font-bold truncate max-w-[150px]" title={row.name}>{row.name}</td>
-                                  <td className={`px-2 py-1.5 text-right tabular-nums font-semibold text-blue-600 ${isTotal ? "bg-blue-100/50" : "bg-blue-50/20"}`}>{row.exp === 0 ? "-" : row.exp.toLocaleString()}</td>
-                                  <td className={`px-2 py-1.5 text-right tabular-nums font-black ${isTotal ? "bg-slate-200" : "bg-slate-100 text-slate-800"}`}>{row.total === 0 ? "-" : row.total.toLocaleString()}</td>
-                                  <td className="px-1 py-1.5 text-right tabular-nums">{row.europe === 0 ? "-" : row.europe.toLocaleString()}</td>
-                                  <td className="px-1 py-1.5 text-right tabular-nums">{row.usa === 0 ? "-" : row.usa.toLocaleString()}</td>
-                                  <td className="px-1 py-1.5 text-right tabular-nums">{row.northAmericaOther === 0 ? "-" : row.northAmericaOther.toLocaleString()}</td>
-                                  <td className="px-1 py-1.5 text-right tabular-nums">{row.centralAmerica === 0 ? "-" : row.centralAmerica.toLocaleString()}</td>
-                                  <td className="px-1 py-1.5 text-right tabular-nums">{row.southAmerica === 0 ? "-" : row.southAmerica.toLocaleString()}</td>
-                                  <td className="px-1 py-1.5 text-right tabular-nums">{row.middleEast === 0 ? "-" : row.middleEast.toLocaleString()}</td>
-                                  <td className="px-1 py-1.5 text-right tabular-nums">{row.southEastAsia === 0 ? "-" : row.southEastAsia.toLocaleString()}</td>
-                                  <td className="px-1 py-1.5 text-right tabular-nums">{row.indiaSubContinent === 0 ? "-" : row.indiaSubContinent.toLocaleString()}</td>
-                                  <td className="px-1 py-1.5 text-right tabular-nums">{row.northernAsia === 0 ? "-" : row.northernAsia.toLocaleString()}</td>
-                                  <td className="px-1 py-1.5 text-right tabular-nums">{row.africa === 0 ? "-" : row.africa.toLocaleString()}</td>
-                                  <td className="px-1 py-1.5 text-right tabular-nums">{row.southAfrica === 0 ? "-" : row.southAfrica.toLocaleString()}</td>
-                                  <td className="px-1 py-1.5 text-right tabular-nums">{row.australia === 0 ? "-" : row.australia.toLocaleString()}</td>
-                                  <td className="px-1 py-1.5 text-right tabular-nums">{row.pacificIslands === 0 ? "-" : row.pacificIslands.toLocaleString()}</td>
-                                  <td className="px-1 py-1.5 text-right tabular-nums">{row.others === 0 ? "-" : row.others.toLocaleString()}</td>
+                                  <td className={`px-2 py-1.5 text-right tabular-nums font-semibold text-blue-600 ${isTotal ? "bg-blue-100/50" : "bg-blue-50/20"}`}>{formatTonnage(row.exp)}</td>
+                                  <td className={`px-2 py-1.5 text-right tabular-nums font-black ${isTotal ? "bg-slate-200" : "bg-slate-100 text-slate-800"}`}>{formatTonnage(row.total)}</td>
+                                  <td className="px-1 py-1.5 text-right tabular-nums">{formatTonnage(row.europe)}</td>
+                                  <td className="px-1 py-1.5 text-right tabular-nums">{formatTonnage(row.usa)}</td>
+                                  <td className="px-1 py-1.5 text-right tabular-nums">{formatTonnage(row.northAmericaOther)}</td>
+                                  <td className="px-1 py-1.5 text-right tabular-nums">{formatTonnage(row.centralAmerica)}</td>
+                                  <td className="px-1 py-1.5 text-right tabular-nums">{formatTonnage(row.southAmerica)}</td>
+                                  <td className="px-1 py-1.5 text-right tabular-nums">{formatTonnage(row.middleEast)}</td>
+                                  <td className="px-1 py-1.5 text-right tabular-nums">{formatTonnage(row.southEastAsia)}</td>
+                                  <td className="px-1 py-1.5 text-right tabular-nums">{formatTonnage(row.indiaSubContinent)}</td>
+                                  <td className="px-1 py-1.5 text-right tabular-nums">{formatTonnage(row.northernAsia)}</td>
+                                  <td className="px-1 py-1.5 text-right tabular-nums">{formatTonnage(row.africa)}</td>
+                                  <td className="px-1 py-1.5 text-right tabular-nums">{formatTonnage(row.southAfrica)}</td>
+                                  <td className="px-1 py-1.5 text-right tabular-nums">{formatTonnage(row.australia)}</td>
+                                  <td className="px-1 py-1.5 text-right tabular-nums">{formatTonnage(row.pacificIslands)}</td>
+                                  <td className="px-1 py-1.5 text-right tabular-nums">{formatTonnage(row.others)}</td>
                                 </tr>
                               );
                             })

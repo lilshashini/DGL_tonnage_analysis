@@ -187,6 +187,10 @@ const parseMonthlyData = (rows: any[]) => {
 
 function PrintViewContent() {
   const searchParams = useSearchParams();
+  const formatTonnage = (val: number | null | undefined) => {
+    if (val == null || val === 0) return "-";
+    return val.toLocaleString("en-US", { minimumFractionDigits: 3, maximumFractionDigits: 3 });
+  };
   const startDate = searchParams?.get("start_date") || "2025-06-01";
   const endDate = searchParams?.get("end_date") || "2026-05-21";
   const country = searchParams?.get("country") || "";
@@ -656,23 +660,23 @@ function PrintViewContent() {
 
     const convertRow = (r: any) => ({
       name: r.Airline || "Unknown Carrier",
-      exp: Math.round(r.Air_Exp_Tong / 1000),
-      imp: Math.round(r.Air_Imp_Tong / 1000),
-      total: Math.round(r.Total_Tons / 1000),
-      europe: Math.round(r.Europe / 1000),
-      usa: Math.round(r.USA / 1000),
-      northAmericaOther: Math.round(r.North_America_Other / 1000),
-      centralAmerica: Math.round(r.Central_America / 1000),
-      southAmerica: Math.round(r.South_America / 1000),
-      middleEast: Math.round(r.Middle_East / 1000),
-      southEastAsia: Math.round(r.South_East_Asia / 1000),
-      indiaSubContinent: Math.round(r.India_Sub_Continent / 1000),
-      northernAsia: Math.round(r.Northern_Asia / 1000),
-      africa: Math.round(r.Africa / 1000),
-      southAfrica: Math.round(r.South_Africa / 1000),
-      australia: Math.round(r.Australia / 1000),
-      pacificIslands: Math.round(r.Pacific_Islands / 1000),
-      others: Math.round(r.Others / 1000)
+      exp: Number((r.Air_Exp_Tong / 1000).toFixed(3)),
+      imp: Number((r.Air_Imp_Tong / 1000).toFixed(3)),
+      total: Number((r.Total_Tons / 1000).toFixed(3)),
+      europe: Number((r.Europe / 1000).toFixed(3)),
+      usa: Number((r.USA / 1000).toFixed(3)),
+      northAmericaOther: Number((r.North_America_Other / 1000).toFixed(3)),
+      centralAmerica: Number((r.Central_America / 1000).toFixed(3)),
+      southAmerica: Number((r.South_America / 1000).toFixed(3)),
+      middleEast: Number((r.Middle_East / 1000).toFixed(3)),
+      southEastAsia: Number((r.South_East_Asia / 1000).toFixed(3)),
+      indiaSubContinent: Number((r.India_Sub_Continent / 1000).toFixed(3)),
+      northernAsia: Number((r.Northern_Asia / 1000).toFixed(3)),
+      africa: Number((r.Africa / 1000).toFixed(3)),
+      southAfrica: Number((r.South_Africa / 1000).toFixed(3)),
+      australia: Number((r.Australia / 1000).toFixed(3)),
+      pacificIslands: Number((r.Pacific_Islands / 1000).toFixed(3)),
+      others: Number((r.Others / 1000).toFixed(3))
     });
 
     const rows = top20.map(convertRow);
@@ -1034,19 +1038,25 @@ function PrintViewContent() {
 
   const CustomLabel = (props: any) => {
     const { x, y, width, index } = props;
-    const row = reportType === "monthly" ? weeklyStackedAirlineData[index] : dailyStackedAirlineData[index];
+    const dataList = reportType === "monthly" ? weeklyStackedAirlineData : dailyStackedAirlineData;
+    const row = dataList[index];
     if (!row || !row.total_tonnage || row.total_tonnage === 0) return null;
+    
+    const isRotated = dataList.length > 8;
     return (
-      <text
-        x={x + width / 2}
-        y={y - 4}
-        fill="#2D3748"
-        fontSize={12}
-        fontWeight="bold"
-        textAnchor="middle"
-      >
-        {formatNumber(row.total_tonnage)}
-      </text>
+      <g transform={`translate(${x + width / 2}, ${y - 6})`}>
+        <text
+          x={0}
+          y={0}
+          fill="#2D3748"
+          fontSize={isRotated ? 9.5 : 11}
+          fontWeight="bold"
+          textAnchor={isRotated ? "start" : "middle"}
+          transform={isRotated ? "rotate(-35)" : undefined}
+        >
+          {formatNumber(row.total_tonnage)}
+        </text>
+      </g>
     );
   };
 
@@ -2701,19 +2711,19 @@ function PrintViewContent() {
         </div>
       )}
 
-      {/* ── SECTION 5: SECTOR TONNAGE DISTRIBUTION (Page at the end of the report) ── */}
+      {/* ── SECTION 5A: SECTOR TONNAGE DISTRIBUTION — CHART (Page at the end of the report) ── */}
       {selectedSections.sectorDistribution && (
-        <div className="print-page-container bg-white text-slate-900 p-6 w-[1123px] h-[794px] overflow-hidden flex flex-col justify-between shadow-lg print:shadow-none" style={{ pageBreakBefore: "always", breakAfter: "page" }}>
+        <div className="print-page-container bg-white text-slate-900 p-8 w-[1123px] h-[794px] overflow-hidden flex flex-col justify-between shadow-lg print:shadow-none" style={{ pageBreakBefore: "always", breakAfter: "page" }}>
           {/* Print Header */}
-          <div className="border-b-2 border-slate-200 pb-2 flex flex-col gap-0.5 shrink-0">
+          <div className="border-b-2 border-slate-200 pb-3 flex flex-col gap-1 shrink-0">
             <div className="flex items-center justify-between">
-              <div className="flex items-center gap-2">
-                <img src="/images/Dart_Logo_new.webp" alt="DGL Logo" className="h-6 w-auto rounded object-contain" />
-                <h1 className="text-xl font-extrabold text-slate-800 tracking-tight leading-none">DGL Tonnage Analysis</h1>
+              <div className="flex items-center gap-2.5">
+                <img src="/images/Dart_Logo_new.webp" alt="DGL Logo" className="h-8 w-auto rounded object-contain" />
+                <h1 className="text-2xl font-extrabold text-slate-800 tracking-tight leading-none">DGL Tonnage Analysis</h1>
               </div>
               <div className="flex gap-1 justify-end items-center">
                 {branch && (
-                  <span className="text-[8px] uppercase font-bold text-slate-500 bg-slate-100 border border-slate-200 px-1.5 py-0.5 rounded leading-none">
+                  <span className="text-[9px] uppercase font-bold text-slate-500 bg-slate-100 border border-slate-200 px-1.5 py-0.5 rounded leading-none">
                     🏢 Branch: {branch}
                   </span>
                 )}
@@ -2721,69 +2731,113 @@ function PrintViewContent() {
             </div>
 
             <div className="flex items-baseline justify-between mt-1">
-              <p className="text-[11px] font-semibold text-slate-400 leading-none">
-                Dart Global Logistics · Sector-wise Carrier & Geographical Tonnage Performance
+              <p className="text-[12.5px] font-semibold text-slate-400 leading-none">
+                Dart Global Logistics · Sector-wise Carrier & Geographical Tonnage Performance — Chart
               </p>
-              <span className="text-slate-700 font-bold text-[11px] tabular-nums whitespace-nowrap leading-none">
+              <span className="text-slate-700 font-bold text-[12.5px] tabular-nums whitespace-nowrap leading-none">
                 {getSqlDateRange() || `${startDate} to ${endDate}`} | Station: {getStationLabel()}
               </span>
             </div>
           </div>
 
-          {/* Graphical Tonnage Contribution (Top half) & Carrier Table (Bottom half) */}
-          <div className="flex flex-col gap-2.5 flex-1 overflow-hidden mt-2.5">
+          {/* Graphical Tonnage Contribution (Top half) */}
+          <div className="flex flex-col gap-4 flex-1 overflow-hidden mt-4">
             {/* Top Chart Area */}
-            <div className="h-[210px] border border-slate-200 rounded-xl p-2.5 bg-white shadow-sm flex flex-col justify-between shrink-0">
-              <div className="border-b border-[#F1F5F9] pb-0.5 flex justify-between items-center shrink-0">
-                <span className="text-[9px] uppercase tracking-wider font-extrabold text-slate-400">
+            <div className="h-[480px] border border-slate-200 rounded-xl p-4 bg-white shadow-sm flex flex-col justify-between shrink-0">
+              <div className="border-b border-[#F1F5F9] pb-2 flex justify-between items-center shrink-0 mb-3">
+                <span className="text-[11px] uppercase tracking-wider font-extrabold text-slate-400">
                   AIR EXPORTS - Geographical Tonnage Contribution (Tons vs Contribution %)
                 </span>
               </div>
-              <div className="h-[170px] w-full">
+              <div className="h-[410px] w-full">
                 <ResponsiveContainer width="100%" height="100%">
-                  <ComposedChart data={chartData} margin={{ top: 15, right: 30, left: 10, bottom: 5 }}>
+                  <ComposedChart data={chartData} margin={{ top: 20, right: 35, left: 15, bottom: 5 }}>
                     <CartesianGrid strokeDasharray="3 3" stroke="#EDF2F7" vertical={false} />
-                    <XAxis dataKey="name" tick={{ fontSize: 10, fill: "#718096", fontWeight: 600 }} axisLine={{ stroke: "#E2E8F0" }} tickLine={false} />
-                    <YAxis yAxisId="left" tick={{ fontSize: 10, fill: "#718096" }} axisLine={false} tickLine={false} tickFormatter={(v) => `${v} t`} width={45} />
-                    <YAxis yAxisId="right" orientation="right" tick={{ fontSize: 10, fill: "#718096" }} axisLine={false} tickLine={false} tickFormatter={(v) => `${v}%`} width={35} />
-                    <Bar yAxisId="left" dataKey="tonnage" fill="#3182CE" radius={[3, 3, 0, 0]} barSize={32} name="Tonnage (Tons)" />
-                    <Line yAxisId="right" type="monotone" dataKey="contribution" stroke="#E53E3E" strokeWidth={2.5} dot={{ fill: "#E53E3E", r: 3.5 }} activeDot={{ r: 5 }} name="Contribution %">
-                      <LabelList dataKey="contribution" position="top" formatter={(v: number) => `${v.toFixed(0)}%`} style={{ fontSize: 9, fill: "#E53E3E", fontWeight: 700 }} />
+                    <XAxis dataKey="name" tick={{ fontSize: 11.5, fill: "#718096", fontWeight: 600 }} axisLine={{ stroke: "#E2E8F0" }} tickLine={false} />
+                    <YAxis yAxisId="left" tick={{ fontSize: 11.5, fill: "#718096" }} axisLine={false} tickLine={false} tickFormatter={(v) => `${v} t`} width={50} />
+                    <YAxis yAxisId="right" orientation="right" tick={{ fontSize: 11.5, fill: "#718096" }} axisLine={false} tickLine={false} tickFormatter={(v) => `${v}%`} width={40} />
+                    <Bar yAxisId="left" dataKey="tonnage" fill="#3182CE" radius={[4, 4, 0, 0]} barSize={40} name="Tonnage (Tons)" />
+                    <Line yAxisId="right" type="monotone" dataKey="contribution" stroke="#E53E3E" strokeWidth={3} dot={{ fill: "#E53E3E", r: 4.5 }} activeDot={{ r: 6 }} name="Contribution %">
+                      <LabelList dataKey="contribution" position="top" formatter={(v: number) => `${v.toFixed(0)}%`} style={{ fontSize: 11, fill: "#E53E3E", fontWeight: 700 }} />
                     </Line>
                   </ComposedChart>
                 </ResponsiveContainer>
               </div>
             </div>
+          </div>
 
-            {/* Bottom Table Area */}
-            <div className="border border-slate-200 rounded-xl p-2.5 bg-white shadow-sm flex-1 overflow-hidden flex flex-col justify-between">
-              <div className="border-b border-[#F1F5F9] pb-0.5 flex justify-between items-center shrink-0 mb-1">
-                <span className="text-[9px] uppercase tracking-wider font-extrabold text-slate-400">
+          {/* Print Footer */}
+          <div className="border-t border-slate-200 pt-2 flex items-center justify-between text-[11px] text-slate-400 shrink-0">
+            <span></span>
+            <span>© 2026 Dart Global Logistics · Sector-wise Carrier & Geographical Tonnage Performance — Chart Page</span>
+          </div>
+        </div>
+      )}
+
+      {/* ── SECTION 5B: SECTOR TONNAGE DISTRIBUTION — DETAIL TABLE (Page at the end of the report) ── */}
+      {selectedSections.sectorDistribution && (
+        <div className="print-page-container bg-white text-slate-900 p-8 w-[1123px] h-[794px] overflow-hidden flex flex-col justify-between shadow-lg print:shadow-none" style={{ pageBreakBefore: "always", breakAfter: "page" }}>
+          {/* Print Header */}
+          <div className="border-b-2 border-slate-200 pb-3 flex flex-col gap-1 shrink-0">
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-2.5">
+                <img src="/images/Dart_Logo_new.webp" alt="DGL Logo" className="h-8 w-auto rounded object-contain" />
+                <h1 className="text-2xl font-extrabold text-slate-800 tracking-tight leading-none">DGL Tonnage Analysis</h1>
+              </div>
+              <div className="flex gap-1 justify-end items-center">
+                {branch && (
+                  <span className="text-[9px] uppercase font-bold text-slate-500 bg-slate-100 border border-slate-200 px-1.5 py-0.5 rounded leading-none">
+                    🏢 Branch: {branch}
+                  </span>
+                )}
+              </div>
+            </div>
+
+            <div className="flex items-baseline justify-between mt-1">
+              <p className="text-[12.5px] font-semibold text-slate-400 leading-none">
+                Dart Global Logistics · Sector-wise Carrier & Geographical Tonnage Performance — Detail Table
+              </p>
+              <span className="text-slate-700 font-bold text-[12.5px] tabular-nums whitespace-nowrap leading-none">
+                {getSqlDateRange() || `${startDate} to ${endDate}`} | Station: {getStationLabel()}
+              </span>
+            </div>
+          </div>
+
+          {/* Carrier Table Area */}
+          <div className="flex flex-col gap-4 flex-1 overflow-hidden mt-4">
+            {/* Table Container */}
+            <div className="border border-slate-200 rounded-xl p-4 bg-white shadow-sm flex-1 flex flex-col justify-between overflow-hidden">
+              <div className="border-b border-[#F1F5F9] pb-2 flex justify-between items-center shrink-0 mb-2">
+                <span className="text-[11px] uppercase tracking-wider font-extrabold text-slate-400">
                   TOP 20 AIR CARRIERS & Total Tonnage - Sector wise (Tons)
                 </span>
               </div>
-              <div className="flex-1 overflow-y-auto min-h-0">
-                <table className="w-full text-left text-[9.5px] border-collapse">
+              <div className="flex-1 overflow-hidden">
+                <table className="w-full text-left text-[10px] leading-tight border-collapse">
                   <thead>
-                    <tr className="border-b border-[#E2E8F0] text-slate-500 uppercase font-bold text-[8.5px] tracking-wider bg-slate-50/50 sticky top-0 z-10">
-                      <th className="px-1 py-0.5 first:rounded-l-md">SL</th>
-                      <th className="px-1 py-0.5">CARRIER NAME</th>
-                      <th className="px-1.5 py-0.5 text-right bg-blue-50/40 text-blue-700">EXP</th>
-                      <th className="px-1.5 py-0.5 text-right bg-slate-100 font-extrabold text-slate-800">TOTAL</th>
-                      <th className="px-1 py-0.5 text-right text-[8.5px]">EUROPE</th>
-                      <th className="px-1 py-0.5 text-right text-[8.5px]">USA</th>
-                      <th className="px-1 py-0.5 text-right text-[8.5px]">N.AMER</th>
-                      <th className="px-1 py-0.5 text-right text-[8.5px]">C.AMER</th>
-                      <th className="px-1 py-0.5 text-right text-[8.5px]">S.AMER</th>
-                      <th className="px-1 py-0.5 text-right text-[8.5px]">M.EAST</th>
-                      <th className="px-1 py-0.5 text-right text-[8.5px]">S.E.ASIA</th>
-                      <th className="px-1 py-0.5 text-right text-[8.5px]">IND.SUB</th>
-                      <th className="px-1 py-0.5 text-right text-[8.5px]">N.ASIA</th>
-                      <th className="px-1 py-0.5 text-right text-[8.5px]">AFRICA</th>
-                      <th className="px-1 py-0.5 text-right text-[8.5px]">S.AFR</th>
-                      <th className="px-1 py-0.5 text-right text-[8.5px]">AUST</th>
-                      <th className="px-1 py-0.5 text-right text-[8.5px]">PACIFIC</th>
-                      <th className="px-1 py-0.5 text-right text-[8.5px] last:rounded-r-md">OTHERS</th>
+                    <tr className="border-b border-[#E2E8F0] text-slate-500 uppercase font-bold text-[9px] tracking-wider bg-slate-50/50">
+                      <th rowSpan={2} className="px-1.5 py-1.5 first:rounded-l-md border-r border-[#E2E8F0] align-middle text-center">SL</th>
+                      <th rowSpan={2} className="px-1.5 py-1.5 border-r border-[#E2E8F0] align-middle">CARRIER NAME</th>
+                      <th colSpan={2} className="px-2 py-1 text-center bg-slate-100/80 border-b border-r border-[#E2E8F0] text-slate-700 font-extrabold">TONNAGE (Tons)</th>
+                      <th colSpan={14} className="px-1 py-1 text-center text-slate-700 font-extrabold border-b border-[#E2E8F0]">GEOGRAPHICAL SECTOR TONNAGE (Tons)</th>
+                    </tr>
+                    <tr className="border-b border-[#E2E8F0] text-slate-500 uppercase font-bold text-[9px] tracking-wider bg-slate-50/50">
+                      <th className="px-2 py-1 text-right bg-blue-50/40 text-blue-700 border-r border-[#E2E8F0]">EXP</th>
+                      <th className="px-2 py-1 text-right bg-slate-100 font-extrabold text-slate-800 border-r border-[#E2E8F0]">TOTAL</th>
+                      <th className="px-1 py-1 text-right">EUROPE</th>
+                      <th className="px-1 py-1 text-right">USA</th>
+                      <th className="px-1 py-1 text-right">NORTH AMERICA</th>
+                      <th className="px-1 py-1 text-right">CENTRAL AMERICA</th>
+                      <th className="px-1 py-1 text-right">SOUTH AMERICA</th>
+                      <th className="px-1 py-1 text-right">MIDDLE EAST</th>
+                      <th className="px-1 py-1 text-right">SOUTH EAST ASIA</th>
+                      <th className="px-1 py-1 text-right">INDIA & SUB CONTINENT</th>
+                      <th className="px-1 py-1 text-right">NORTHERN ASIA</th>
+                      <th className="px-1 py-1 text-right">AFRICA</th>
+                      <th className="px-1 py-1 text-right">SOUTH AFRICA</th>
+                      <th className="px-1 py-1 text-right">AUSTRALIA</th>
+                      <th className="px-1 py-1 text-right">PACIFIC</th>
+                      <th className="px-1 py-1 text-right last:rounded-r-md">OTHERS</th>
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-[#F1F5F9]">
@@ -2791,25 +2845,25 @@ function PrintViewContent() {
                       const isTotal = row.isGrandTotal;
                       const isOthers = row.isOthersRow;
                       return (
-                        <tr key={i} className={`${isTotal ? "font-extrabold bg-slate-100 border-t-2 border-slate-350" : isOthers ? "font-bold bg-slate-50/50" : "hover:bg-slate-50/30 text-slate-700"}`}>
-                          <td className="px-1 py-0.5 text-slate-400 font-semibold">{isTotal ? "" : isOthers ? "" : i + 1}</td>
-                          <td className="px-1 py-0.5 font-bold truncate max-w-[125px]" title={row.name}>{row.name}</td>
-                          <td className={`px-1.5 py-0.5 text-right tabular-nums font-semibold text-blue-600 ${isTotal ? "bg-blue-100/50" : "bg-blue-50/20"}`}>{row.exp === 0 ? "-" : row.exp.toLocaleString()}</td>
-                          <td className={`px-1.5 py-0.5 text-right tabular-nums font-black ${isTotal ? "bg-slate-200" : "bg-slate-100 text-slate-800"}`}>{row.total === 0 ? "-" : row.total.toLocaleString()}</td>
-                          <td className="px-1 py-0.5 text-right tabular-nums">{row.europe === 0 ? "-" : row.europe.toLocaleString()}</td>
-                          <td className="px-1 py-0.5 text-right tabular-nums">{row.usa === 0 ? "-" : row.usa.toLocaleString()}</td>
-                          <td className="px-1 py-0.5 text-right tabular-nums">{row.northAmericaOther === 0 ? "-" : row.northAmericaOther.toLocaleString()}</td>
-                          <td className="px-1 py-0.5 text-right tabular-nums">{row.centralAmerica === 0 ? "-" : row.centralAmerica.toLocaleString()}</td>
-                          <td className="px-1 py-0.5 text-right tabular-nums">{row.southAmerica === 0 ? "-" : row.southAmerica.toLocaleString()}</td>
-                          <td className="px-1 py-0.5 text-right tabular-nums">{row.middleEast === 0 ? "-" : row.middleEast.toLocaleString()}</td>
-                          <td className="px-1 py-0.5 text-right tabular-nums">{row.southEastAsia === 0 ? "-" : row.southEastAsia.toLocaleString()}</td>
-                          <td className="px-1 py-0.5 text-right tabular-nums">{row.indiaSubContinent === 0 ? "-" : row.indiaSubContinent.toLocaleString()}</td>
-                          <td className="px-1 py-0.5 text-right tabular-nums">{row.northernAsia === 0 ? "-" : row.northernAsia.toLocaleString()}</td>
-                          <td className="px-1 py-0.5 text-right tabular-nums">{row.africa === 0 ? "-" : row.africa.toLocaleString()}</td>
-                          <td className="px-1 py-0.5 text-right tabular-nums">{row.southAfrica === 0 ? "-" : row.southAfrica.toLocaleString()}</td>
-                          <td className="px-1 py-0.5 text-right tabular-nums">{row.australia === 0 ? "-" : row.australia.toLocaleString()}</td>
-                          <td className="px-1 py-0.5 text-right tabular-nums">{row.pacificIslands === 0 ? "-" : row.pacificIslands.toLocaleString()}</td>
-                          <td className="px-1 py-0.5 text-right tabular-nums">{row.others === 0 ? "-" : row.others.toLocaleString()}</td>
+                        <tr key={i} className={`${isTotal ? "font-extrabold bg-slate-100 border-t-2 border-slate-350 text-[11px]" : isOthers ? "font-bold bg-slate-50/50" : "hover:bg-slate-50/30 text-slate-700"}`}>
+                          <td className="px-1.5 py-[3px] text-slate-400 font-semibold">{isTotal ? "" : isOthers ? "" : i + 1}</td>
+                          <td className="px-1.5 py-[3px] font-bold truncate max-w-[135px]" title={row.name}>{row.name}</td>
+                          <td className={`px-2 py-[3px] text-right tabular-nums font-semibold text-blue-600 ${isTotal ? "bg-blue-100/50" : "bg-blue-50/20"}`}>{formatTonnage(row.exp)}</td>
+                          <td className={`px-2 py-[3px] text-right tabular-nums font-black ${isTotal ? "bg-slate-200" : "bg-slate-100 text-slate-800"}`}>{formatTonnage(row.total)}</td>
+                          <td className="px-1 py-[3px] text-right tabular-nums">{formatTonnage(row.europe)}</td>
+                          <td className="px-1 py-[3px] text-right tabular-nums">{formatTonnage(row.usa)}</td>
+                          <td className="px-1 py-[3px] text-right tabular-nums">{formatTonnage(row.northAmericaOther)}</td>
+                          <td className="px-1 py-[3px] text-right tabular-nums">{formatTonnage(row.centralAmerica)}</td>
+                          <td className="px-1 py-[3px] text-right tabular-nums">{formatTonnage(row.southAmerica)}</td>
+                          <td className="px-1 py-[3px] text-right tabular-nums">{formatTonnage(row.middleEast)}</td>
+                          <td className="px-1 py-[3px] text-right tabular-nums">{formatTonnage(row.southEastAsia)}</td>
+                          <td className="px-1 py-[3px] text-right tabular-nums">{formatTonnage(row.indiaSubContinent)}</td>
+                          <td className="px-1 py-[3px] text-right tabular-nums">{formatTonnage(row.northernAsia)}</td>
+                          <td className="px-1 py-[3px] text-right tabular-nums">{formatTonnage(row.africa)}</td>
+                          <td className="px-1 py-[3px] text-right tabular-nums">{formatTonnage(row.southAfrica)}</td>
+                          <td className="px-1 py-[3px] text-right tabular-nums">{formatTonnage(row.australia)}</td>
+                          <td className="px-1 py-[3px] text-right tabular-nums">{formatTonnage(row.pacificIslands)}</td>
+                          <td className="px-1 py-[3px] text-right tabular-nums">{formatTonnage(row.others)}</td>
                         </tr>
                       );
                     })}
@@ -2820,9 +2874,9 @@ function PrintViewContent() {
           </div>
 
           {/* Print Footer */}
-          <div className="border-t border-slate-200 pt-1.5 flex items-center justify-between text-[10px] text-slate-400 shrink-0">
+          <div className="border-t border-slate-200 pt-2 flex items-center justify-between text-[11px] text-slate-400 shrink-0">
             <span></span>
-            <span>© 2026 Dart Global Logistics · Sector-wise Carrier & Geographical Tonnage Performance Page</span>
+            <span>© 2026 Dart Global Logistics · Sector-wise Carrier & Geographical Tonnage Performance — Detail Table Page</span>
           </div>
         </div>
       )}
