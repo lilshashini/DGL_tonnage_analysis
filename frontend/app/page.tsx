@@ -4406,12 +4406,12 @@ ORDER BY vt.ETD DESC, ROUND(SUM(vs.Revenue_USD), 2) DESC`);
                     {/* Doughnut Legends list */}
                     <div className="space-y-2 max-h-[120px] overflow-y-auto">
                       {airlinePieData.map((entry: any, idx: number) => (
-                        <div key={entry.name} className="flex items-center justify-between text-xs text-slate-655">
-                          <div className="flex items-center gap-2 min-w-0">
-                            <span className="w-2.5 h-2.5 rounded-full shrink-0" style={{ backgroundColor: entry.name === "Others" ? "#718096" : getAirlineColor(entry.name, idx) }} />
-                            <span className="font-semibold text-slate-700 truncate max-w-[120px]">{entry.name}</span>
+                        <div key={entry.name} className="flex items-start justify-between text-xs text-slate-655 gap-2">
+                          <div className="flex items-start gap-2 min-w-0">
+                            <span className="w-2.5 h-2.5 rounded-full shrink-0 mt-0.5" style={{ backgroundColor: entry.name === "Others" ? "#718096" : getAirlineColor(entry.name, idx) }} />
+                            <span className="font-semibold text-slate-700 leading-snug">{entry.name}</span>
                           </div>
-                          <span className="font-bold text-[#2D3748] tabular-nums shrink-0">{formatNumber(entry.value)} kg</span>
+                          <span className="font-bold text-[#2D3748] tabular-nums shrink-0 mt-0.5">{formatNumber(entry.value)} kg</span>
                         </div>
                       ))}
                     </div>

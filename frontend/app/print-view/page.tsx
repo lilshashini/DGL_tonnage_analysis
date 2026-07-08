@@ -1052,7 +1052,7 @@ function PrintViewContent() {
           fontSize={isRotated ? 9.5 : 11}
           fontWeight="bold"
           textAnchor={isRotated ? "start" : "middle"}
-          transform={isRotated ? "rotate(-85)" : undefined}
+          transform={isRotated ? "rotate(-90)" : undefined}
         >
           {formatNumber(row.total_tonnage)}
         </text>
@@ -1482,14 +1482,14 @@ function PrintViewContent() {
                           {top10Airlines.map((entry, idx) => {
                             const pct = totalAllTonnage > 0 ? ((entry.tonnage / totalAllTonnage) * 100).toFixed(1) : "0.0";
                             return (
-                              <div key={entry.name} className="flex items-center justify-between text-[9px] border-b border-slate-50 pb-0.5">
-                                <div className="flex items-center gap-1.5 min-w-0">
-                                  <span className="w-1.5 h-1.5 rounded-full shrink-0" style={{ backgroundColor: getAirlineColor(entry.name, idx) }} />
-                                  <span className="font-bold text-slate-700 truncate max-w-[160px]" title={entry.name}>
+                              <div key={entry.name} className="flex items-start justify-between text-[12.5px] border-b border-slate-50 pb-0.5 gap-2">
+                                <div className="flex items-start gap-1.5 min-w-0">
+                                  <span className="w-2 h-2 rounded-full shrink-0 mt-1" style={{ backgroundColor: getAirlineColor(entry.name, idx) }} />
+                                  <span className="font-bold text-slate-700 leading-snug" title={entry.name}>
                                     {entry.name}
                                   </span>
                                 </div>
-                                <div className="flex items-center gap-1 shrink-0 text-right">
+                                <div className="flex items-start gap-1 shrink-0 text-right mt-0.5">
                                   <span className="font-bold text-[#2D3748] tabular-nums">{formatNumber(entry.tonnage)} kg</span>
                                   <span className="text-slate-400 font-medium">({pct}%)</span>
                                 </div>
@@ -1499,14 +1499,14 @@ function PrintViewContent() {
                           {(() => {
                             const othersPct = totalAllTonnage > 0 ? ((othersTonnage / totalAllTonnage) * 100).toFixed(1) : "0.0";
                             return (
-                              <div key="Others" className="flex items-center justify-between text-[9px] border-b border-slate-50 pb-0.5">
-                                <div className="flex items-center gap-1.5 min-w-0">
-                                  <span className="w-1.5 h-1.5 rounded-full shrink-0 bg-[#CBD5E0]" />
-                                  <span className="font-bold text-slate-700 truncate max-w-[160px]" title="Others">
+                              <div key="Others" className="flex items-start justify-between text-[12.5px] border-b border-slate-50 pb-0.5 gap-2">
+                                <div className="flex items-start gap-1.5 min-w-0">
+                                  <span className="w-2 h-2 rounded-full shrink-0 bg-[#718096] mt-1" />
+                                  <span className="font-bold text-slate-700 leading-snug" title="Others">
                                     Others
                                   </span>
                                 </div>
-                                <div className="flex items-center gap-1 shrink-0 text-right">
+                                <div className="flex items-start gap-1 shrink-0 text-right mt-0.5">
                                   <span className="font-bold text-[#2D3748] tabular-nums">{formatNumber(othersTonnage)} kg</span>
                                   <span className="text-slate-400 font-medium">({othersPct}%)</span>
                                 </div>
@@ -1554,12 +1554,12 @@ function PrintViewContent() {
                     {airlinePieData.map((entry: any, idx: number) => {
                       const pct = kpi.Total_Tonnage > 0 ? ((entry.value / kpi.Total_Tonnage) * 100).toFixed(1) : "0.0";
                       return (
-                        <div key={entry.name} className="flex items-center justify-between text-[12.5px] text-slate-500">
-                          <div className="flex items-center gap-1.5 min-w-0">
-                            <span className="w-1.5 h-1.5 rounded-full flex-shrink-0" style={{ backgroundColor: entry.name === "Others" ? "#718096" : getAirlineColor(entry.name, idx) }} />
-                            <span className="truncate max-w-[120px] font-semibold">{entry.name}</span>
+                        <div key={entry.name} className="flex items-start justify-between text-[12.5px] text-slate-500 gap-2">
+                          <div className="flex items-start gap-1.5 min-w-0">
+                            <span className="w-2 h-2 rounded-full flex-shrink-0 mt-1" style={{ backgroundColor: entry.name === "Others" ? "#718096" : getAirlineColor(entry.name, idx) }} />
+                            <span className="font-semibold text-slate-700 leading-snug">{entry.name}</span>
                           </div>
-                          <span className="font-bold text-slate-700 shrink-0 text-[12.5px]">{formatNumber(entry.value)} kg ({pct}%)</span>
+                          <span className="font-bold text-slate-700 shrink-0 text-[12.5px] text-right mt-0.5">{formatNumber(entry.value)} kg ({pct}%)</span>
                         </div>
                       );
                     })}
@@ -1666,14 +1666,14 @@ function PrintViewContent() {
                   {top10Airlines.map((entry, idx) => {
                     const pct = totalTop10Tonnage > 0 ? ((entry.tonnage / totalTop10Tonnage) * 100).toFixed(1) : "0.0";
                     return (
-                      <div key={entry.name} className="flex items-center justify-between text-[9px] border-b border-slate-50 pb-0.5">
-                        <div className="flex items-center gap-1.5 min-w-0">
-                          <span className="w-1.5 h-1.5 rounded-full shrink-0" style={{ backgroundColor: getAirlineColor(entry.name, idx) }} />
-                          <span className="font-bold text-slate-700 truncate max-w-[160px]" title={entry.name}>
+                      <div key={entry.name} className="flex items-start justify-between text-[12.5px] border-b border-slate-50 pb-0.5 gap-2">
+                        <div className="flex items-start gap-1.5 min-w-0">
+                          <span className="w-2 h-2 rounded-full shrink-0 mt-1" style={{ backgroundColor: getAirlineColor(entry.name, idx) }} />
+                          <span className="font-bold text-slate-700 leading-snug" title={entry.name}>
                             {entry.name}
                           </span>
                         </div>
-                        <div className="flex items-center gap-1 shrink-0 text-right">
+                        <div className="flex items-start gap-1 shrink-0 text-right mt-0.5">
                           <span className="font-bold text-[#2D3748] tabular-nums">{formatNumber(entry.tonnage)} kg</span>
                           <span className="text-slate-400 font-medium">({pct}%)</span>
                         </div>
@@ -2534,12 +2534,12 @@ function PrintViewContent() {
 
                   <div className="space-y-1 mt-2 overflow-hidden flex-1">
                     {doughnutData.slice(0, 4).map((entry, idx) => (
-                      <div key={entry.name} className="flex items-center justify-between text-[9px] text-slate-500">
-                        <div className="flex items-center gap-1.5 min-w-0">
-                          <span className="w-1.5 h-1.5 rounded-full flex-shrink-0" style={{ backgroundColor: entry.name === "Others" ? "#718096" : PIE_COLORS[idx % PIE_COLORS.length] }} />
-                          <span className="truncate max-w-[90px] font-semibold">{entry.name}</span>
+                      <div key={entry.name} className="flex items-start justify-between text-[12px] text-slate-500 gap-2">
+                        <div className="flex items-start gap-1.5 min-w-0">
+                          <span className="w-2 h-2 rounded-full flex-shrink-0 mt-1" style={{ backgroundColor: entry.name === "Others" ? "#718096" : PIE_COLORS[idx % PIE_COLORS.length] }} />
+                          <span className="font-semibold text-slate-700 leading-snug">{entry.name}</span>
                         </div>
-                        <span className="font-bold text-slate-700">{formatCurrency(entry.value)}</span>
+                        <span className="font-bold text-slate-700 shrink-0 mt-0.5">{formatCurrency(entry.value)}</span>
                       </div>
                     ))}
                   </div>
