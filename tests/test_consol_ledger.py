@@ -118,6 +118,30 @@ class ConsolLedgerTest(unittest.TestCase):
             self.assertEqual(book.active["A10"].number_format, "yyyy-mm-dd hh:mm:ss")
             book.close()
 
+    def test_etd_epoch_timestamp_formats_as_datetime(self):
+        # 1792436340000 ms is 2026-10-19 18:59:00 UTC
+        expected = datetime.datetime(2026, 10, 19, 18, 59, 0)
+        values = [
+            1792436340000,
+            1792436340000.0,
+            "1792436340000",
+            1792436340,
+            "1792436340",
+        ]
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / "epoch.xlsx"
+            rows = [{"ETD": v, "Console_Number": f"C{i}"} for i, v in enumerate(values, 1)]
+            ledger_service.generate_consol_ledger(path, rows, "AIR")
+            book = load_workbook(path)
+            for idx in range(5, len(values) + 5):
+                cell = book.active.cell(idx, 1)
+                self.assertEqual(cell.value, expected)
+                self.assertEqual(cell.data_type, "d")
+                self.assertEqual(cell.number_format, "yyyy-mm-dd hh:mm:ss")
+                self.assertEqual(cell.value.strftime("%Y-%m-%d %H:%M:%S"), "2026-10-19 18:59:00")
+            book.close()
+
+
     def mock_graph(self):
         app = MagicMock()
         app.acquire_token_for_client.return_value = {"access_token": "fixture-token"}

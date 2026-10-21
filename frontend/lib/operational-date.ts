@@ -9,7 +9,15 @@ const COUNTRIES: Record<string, string> = {
 };
 
 export function operationalDay(value: unknown, company?: string, country?: string): string {
-  const raw = String(value ?? "");
+  let raw = String(value ?? "");
+  if (typeof value === "number" || /^\d{9,16}$/.test(raw.trim())) {
+    const num = Number(value);
+    const ms = num > 1e11 ? num : num * 1000;
+    const d = new Date(ms);
+    if (!Number.isNaN(d.getTime())) {
+      raw = d.toISOString();
+    }
+  }
   const day = raw.match(/^\d{4}-\d{2}-\d{2}/)?.[0];
   if (!day || Number.isNaN(Date.parse(day + "T00:00:00Z"))) return "";
   const zone = STATIONS[String(company || "").toUpperCase()] || COUNTRIES[String(country || "").toLowerCase()];
@@ -26,7 +34,13 @@ export function operationalDay(value: unknown, company?: string, country?: strin
 
 /** UTC is used only for calendar arithmetic after choosing the station day. */
 export function freightEtdDate(row: any, mode: "AIR" | "SEA"): Date {
-  const value = row.ETD ?? row.etd ?? row.etd_date;
+  let value = row.ETD ?? row.etd ?? row.etd_date;
+  if (typeof value === "string" && /^\d{9,16}$/.test(value.trim())) {
+    value = Number(value);
+  }
+  if (typeof value === "number") {
+    value = value > 1e11 ? value : value * 1000;
+  }
   if (mode === "AIR") return new Date(value);
   const day = operationalDay(value, row.Company_Code ?? row.Company, row.Origin_Country);
   return day ? new Date(day + "T00:00:00Z") : new Date(NaN);

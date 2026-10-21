@@ -16,16 +16,63 @@ from openpyxl.worksheet.table import Table, TableStyleInfo
 
 def _excel_etd(value):
     """Keep the source ETD calendar/clock fields in Excel's timezone-free date type."""
-    if isinstance(value, str):
+    if value is None:
+        return None
+    if isinstance(value, float):
+        import math
+        if math.isnan(value):
+            return None
+    if hasattr(value, 'to_pydatetime'):
         try:
-            value = datetime.datetime.fromisoformat(value.strip().replace("Z", "+00:00"))
-        except ValueError:
+            if hasattr(value, 'isna') and value.isna():
+                return None
+            value = value.to_pydatetime()
+        except Exception:
+            pass
+    # Numeric epoch timestamps (e.g. 1792436340000 for ms, 1792436340 for s)
+    if isinstance(value, (int, float)) and not isinstance(value, bool):
+        try:
+            if value > 1e17:
+                ts = value / 1e9
+            elif value > 1e14:
+                ts = value / 1e6
+            elif value > 1e11:
+                ts = value / 1000.0
+            elif value >= 1e8:
+                ts = float(value)
+            else:
+                return value
+            return datetime.datetime.fromtimestamp(ts, tz=datetime.timezone.utc).replace(tzinfo=None)
+        except (ValueError, OverflowError, OSError):
             return value
+    if isinstance(value, str):
+        s = value.strip()
+        if not s:
+            return None
+        # Numeric epoch timestamp formatted as a string (e.g. '1792436340000')
+        try:
+            num = float(s)
+            if num >= 1e8:
+                return _excel_etd(num)
+        except (ValueError, OverflowError):
+            pass
+        try:
+            value = datetime.datetime.fromisoformat(s.replace("Z", "+00:00"))
+        except ValueError:
+            try:
+                import pandas as pd
+                dt = pd.to_datetime(s)
+                if pd.isna(dt):
+                    return None
+                return dt.to_pydatetime().replace(tzinfo=None)
+            except Exception:
+                return value
     if isinstance(value, datetime.datetime):
         return value.replace(tzinfo=None)
     if isinstance(value, datetime.date):
         return datetime.datetime.combine(value, datetime.time())
     return value
+
 
 
 def ledger_path(pdf_path):
@@ -77,7 +124,8 @@ def generate_consol_ledger(output_path, records, transport_mode="AIR"):
         for row_index, record in enumerate(records, 5):
             for col_index, column in enumerate(columns, 1):
                 value = record.get(column)
-                if str(column).strip().upper() == "ETD":
+                col_name = str(column).strip().upper()
+                if col_name == "ETD" or col_name.endswith("_ETD") or col_name.startswith("ETD_") or col_name in ("ETA", "ATD", "ATA"):
                     value = _excel_etd(value)
                 if isinstance(value, (dict, list)):
                     value = json.dumps(value, ensure_ascii=False)

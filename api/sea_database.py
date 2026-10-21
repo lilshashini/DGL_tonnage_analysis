@@ -22,7 +22,22 @@ def sea_shipping_group(row):
 
 def sea_operational_date(row):
     """Naive SQL ETDs are station-local; convert explicit instants to that zone."""
-    timestamp = pd.Timestamp(row["ETD"])
+    val = row["ETD"]
+    if isinstance(val, (int, float)) and not isinstance(val, bool):
+        if val > 1e11:
+            timestamp = pd.to_datetime(val, unit="ms", utc=True)
+        elif val >= 1e8:
+            timestamp = pd.to_datetime(val, unit="s", utc=True)
+        else:
+            timestamp = pd.Timestamp(val)
+    elif isinstance(val, str) and val.strip().isdigit() and len(val.strip()) >= 9:
+        num = float(val.strip())
+        if num > 1e11:
+            timestamp = pd.to_datetime(num, unit="ms", utc=True)
+        else:
+            timestamp = pd.to_datetime(num, unit="s", utc=True)
+    else:
+        timestamp = pd.Timestamp(val)
     zone = (STATION_ZONES.get(str(row.get("Company_Code") or row.get("Company") or "").upper())
             or COUNTRY_ZONES.get(str(row.get("Origin_Country") or "").lower()))
     if timestamp.tzinfo is not None and zone:
