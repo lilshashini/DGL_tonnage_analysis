@@ -299,10 +299,14 @@ function PrintViewContent() {
 
   const cleanCountryName = (str?: string): string => {
     if (!str) return "";
-    return str
+    const res = str
       .replace(/^[A-Z]{2}\s*[-–:]?\s*/, "")
       .replace(/^(LK|IN|VN|BD|PK|US)\s+/i, "")
       .trim();
+    if (res.toLowerCase().replace(/\s+/g, "") === "vietnam") {
+      return "Viet Nam";
+    }
+    return res;
   };
 
   const getStationLabel = () => {
@@ -479,6 +483,7 @@ function PrintViewContent() {
         }
         if (!customSql) throw new Error("Report query is missing or expired. Reopen the preview and try again.");
         if (customSql) {
+          customSql = customSql.replace(/(\b(?:[a-zA-Z0-9_]+\.)?(?:ConLoadPortCountryName|RealLoadPortCountryName|RealDisChargePortCountryName|ConDischargePortCountryName)\s*=\s*)'Vietnam'/gi, "$1'Viet Nam'");
           startSectors(customSql);
           setSqlQuery(customSql);
           const d = await loadJson(`${API}/api/custom-query`, {

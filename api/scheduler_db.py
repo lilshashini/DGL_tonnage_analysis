@@ -167,6 +167,9 @@ def get_supabase_stations() -> List[Dict]:
         if resp.status_code == 200:
             data = resp.json()
             if data and len(data) > 0:
+                for s in data:
+                    if s.get("code") == "VNM" or str(s.get("country", "")).strip().lower().replace(" ", "") == "vietnam":
+                        s["country"] = "Viet Nam"
                 return data
     except Exception as e:
         print(f"Warning: Could not fetch stations from Supabase: {e}")

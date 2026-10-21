@@ -72,6 +72,18 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
+def normalize_country_name(country: Optional[str], company_code: Optional[str] = None) -> Optional[str]:
+    """Ensures country name matches the data warehouse representation ('Viet Nam')."""
+    if not country:
+        if company_code == "VNM":
+            return "Viet Nam"
+        return country
+    clean = str(country).strip()
+    if clean.lower().replace(" ", "") == "vietnam" or company_code == "VNM":
+        return "Viet Nam"
+    return clean
+
+
 def extract_station_info_from_sql(custom_sql: str) -> tuple[Optional[str], Optional[str]]:
     """
     Extracts (company_code, country) from a SQL query string.
@@ -91,7 +103,7 @@ def extract_station_info_from_sql(custom_sql: str) -> tuple[Optional[str], Optio
         
     country_match = re.search(r"\b(?:[a-zA-Z0-9_]+\.)?ConLoadPortCountryName\s*=\s*'([^']+)'", custom_sql, re.IGNORECASE)
     if country_match:
-        country = country_match.group(1)
+        country = normalize_country_name(country_match.group(1), company_code)
         
     return company_code, country
 
@@ -111,6 +123,7 @@ def extract_branch_info_from_sql(custom_sql: str) -> Optional[str]:
 
 def generate_branchwise_sql(country: str, company_code: str, branch: str, start_date: str, end_date: str) -> str:
     """Generates the standard Branch-wise SQL query."""
+    country = normalize_country_name(country, company_code) or "India"
     return f"""
 SELECT
     vt.ConsoleNumber AS Console_Number,
@@ -635,6 +648,7 @@ def build_email_metadata(
     # Clean country name (strip 2-letter codes like LK, IN, etc.)
     station_clean = re.sub(r'^[A-Z]{2}\s*[-–:]?\s*', '', station_str).strip()
     station_clean = re.sub(r'^(LK|IN|VN|BD|PK|US)\s+', '', station_clean, flags=re.IGNORECASE).strip()
+    station_clean = normalize_country_name(station_clean, company_code) or station_clean
 
     # Resolve branch name if present
     branch_str = ""
@@ -699,8 +713,14 @@ def process_pdf_and_email(req: ReportRequest):
         
     # Resolve company_code and country from SQL if in custom-sql mode
     company_val = req.company_code
-    country_val = req.country
+    country_val = normalize_country_name(req.country, company_val)
     if req.mode == "custom-sql" and req.custom_sql:
+        req.custom_sql = re.sub(
+            r"(\b(?:[a-zA-Z0-9_]+\.)?(?:ConLoadPortCountryName|RealLoadPortCountryName|RealDisChargePortCountryName|ConDischargePortCountryName)\s*=\s*)'Vietnam'",
+            r"\1'Viet Nam'",
+            req.custom_sql,
+            flags=re.IGNORECASE
+        )
         sql_company, sql_country = extract_station_info_from_sql(req.custom_sql)
         if not company_val and sql_company:
             company_val = sql_company
@@ -1172,8 +1192,14 @@ def send_report(req: ReportRequest):
         
     # Resolve company_code and country from SQL if in custom-sql mode
     company_val = req.company_code
-    country_val = req.country
+    country_val = normalize_country_name(req.country, company_val)
     if req.mode == "custom-sql" and req.custom_sql:
+        req.custom_sql = re.sub(
+            r"(\b(?:[a-zA-Z0-9_]+\.)?(?:ConLoadPortCountryName|RealLoadPortCountryName|RealDisChargePortCountryName|ConDischargePortCountryName)\s*=\s*)'Vietnam'",
+            r"\1'Viet Nam'",
+            req.custom_sql,
+            flags=re.IGNORECASE
+        )
         sql_company, sql_country = extract_station_info_from_sql(req.custom_sql)
         if not company_val and sql_company:
             company_val = sql_company
@@ -1353,7 +1379,13 @@ def cache_query(req: CacheQueryRequest):
     if not req.query or not req.query.strip():
         raise HTTPException(status_code=400, detail="Query cannot be empty")
     query_id = str(uuid.uuid4())
-    query_cache[query_id] = req.query
+    cleaned_query = re.sub(
+        r"(\b(?:[a-zA-Z0-9_]+\.)?(?:ConLoadPortCountryName|RealLoadPortCountryName|RealDisChargePortCountryName|ConDischargePortCountryName)\s*=\s*)'Vietnam'",
+        r"\1'Viet Nam'",
+        req.query,
+        flags=re.IGNORECASE
+    )
+    query_cache[query_id] = cleaned_query
     return {"status": "success", "query_id": query_id}
 
 @app.get("/api/get-cached-query/{query_id}")
@@ -1514,7 +1546,7 @@ def execute_scheduled_report_job(schedule_id: str):
     
     # Process mode and cache custom SQL query if needed
     company_val = filters.get("company_code")
-    country_val = filters.get("country")
+    country_val = normalize_country_name(filters.get("country"), company_val)
     branch_val = filters.get("branch") or filters.get("branch_code")
     
     # Dynamically resolve station & branch metadata from Supabase if not provided
@@ -1649,6 +1681,12 @@ ORDER BY vt.ETD DESC, ROUND(SUM(vs.Revenue_USD), 2) DESC;
         custom_sql = filters.get("custom_sql")
         # Ensure any saved custom_sql has its ETD date range synchronized to current dynamic start_date & end_date
         if custom_sql:
+            custom_sql = re.sub(
+                r"(\b(?:[a-zA-Z0-9_]+\.)?(?:ConLoadPortCountryName|RealLoadPortCountryName|RealDisChargePortCountryName|ConDischargePortCountryName)\s*=\s*)'Vietnam'",
+                r"\1'Viet Nam'",
+                custom_sql,
+                flags=re.IGNORECASE
+            )
             custom_sql = re.sub(
                 r"(?:[a-zA-Z0-9_]+\.)?ETD\s*>=\s*'[^']+'",
                 f"vt.ETD >= '{start_date}'",

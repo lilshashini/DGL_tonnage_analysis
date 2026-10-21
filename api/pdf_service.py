@@ -78,6 +78,23 @@ def generate_dashboard_pdf(
     Directs a headless browser to the frontend print view and captures a PDF.
     Supports both standard mode (with filters) and custom-sql mode (with SQL query).
     """
+    if country and str(country).strip().lower().replace(" ", "") == "vietnam":
+        country = "Viet Nam"
+    if custom_sql:
+        import re
+        custom_sql = re.sub(
+            r"(\b(?:[a-zA-Z0-9_]+\.)?(?:ConLoadPortCountryName|RealLoadPortCountryName|RealDisChargePortCountryName|ConDischargePortCountryName)\s*=\s*)'Vietnam'",
+            r"\1'Viet Nam'",
+            custom_sql,
+            flags=re.IGNORECASE
+        )
+        custom_sql = re.sub(
+            r"(\b(?:[a-zA-Z0-9_]+\.)?(?:ConLoadPortCountryName|RealLoadPortCountryName|RealDisChargePortCountryName|ConDischargePortCountryName)\s+IN\s*\([^)]*?)'Vietnam'([^)]*?\))",
+            r"\1'Viet Nam'\2",
+            custom_sql,
+            flags=re.IGNORECASE
+        )
+
     base_url = get_tonnage_base_url()
     
     # Construct the print-optimized frontend URL with filter parameters

@@ -51,14 +51,25 @@ def get_previous_week_dates():
     """Alias for backwards compatibility."""
     return get_report_dates()
 
+def normalize_country(country: str, station_code: str = None) -> str:
+    """Ensure country name matches the data warehouse representation (e.g. 'Viet Nam')."""
+    if not country:
+        return "Viet Nam" if station_code == "VNM" else ""
+    clean = str(country).strip()
+    if clean.lower().replace(" ", "") == "vietnam" or station_code == "VNM":
+        return "Viet Nam"
+    return clean
+
+
 # --- 1. DATA EXTRACTION ---
 def fetch_data(engine, station, start_date, end_date, transport_mode="AIR"):
     """Fetches custom tonnage data for a specific station, filtered by company code."""
-    logging.info(f"Connecting to SQL Server to fetch tonnage data for {station['name']}...")
+    station_country = normalize_country(station.get("country"), station.get("code"))
+    logging.info(f"Connecting to SQL Server to fetch tonnage data for {station['name']} ({station_country})...")
     try:
         if transport_mode == "SEA":
             from api.sea_database import build_sea_query
-            query, params = build_sea_query(start_date, end_date, country=station["country"],
+            query, params = build_sea_query(start_date, end_date, country=station_country,
                                            company_code=station["code"], branch=station.get("branch"))
             return pd.read_sql(text(query), engine, params=params)
         query = """
@@ -103,7 +114,7 @@ def fetch_data(engine, station, start_date, end_date, transport_mode="AIR"):
         ORDER BY vt.ETD DESC, ROUND(SUM(vs.Revenue_USD), 2) DESC;
         """
         df = pd.read_sql(text(query), engine, params={
-            "country": station["country"],
+            "country": station_country,
             "start_date": start_date,
             "end_date": end_date,
             "company_code": station["code"]
@@ -117,7 +128,8 @@ def fetch_data(engine, station, start_date, end_date, transport_mode="AIR"):
 # --- 2. PDF GENERATION ---
 def generate_pdf(station_code, country, station_name, start_date, end_date, output_path, transport_mode="AIR", branch_code=None):
     """Generates A4 Landscape PDF dashboard in custom-sql mode via Playwright."""
-    logging.info(f"Generating PDF dashboard via Playwright for {station_name}...")
+    country = normalize_country(country, station_code)
+    logging.info(f"Generating PDF dashboard via Playwright for {station_name} ({country})...")
     try:
         if transport_mode == "SEA":
             from api.sea_database import render_sea_query
@@ -311,7 +323,8 @@ if __name__ == "__main__":
         ]
     
     for station in STATIONS:
-        logging.info(f"Processing station: {station['name']} ({station['code']})")
+        station["country"] = normalize_country(station.get("country"), station.get("code"))
+        logging.info(f"Processing station: {station['name']} ({station['code']}) - Country: {station['country']}")
         mode_prefix = "Sea_" if transport_mode == "SEA" else ""
         pdf_file_path = f"outputs/{mode_prefix}Weekly_Tonnage_Report_{station['code']}.pdf"
         

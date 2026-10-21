@@ -62,10 +62,14 @@ const formatNumber = (val: number | null | undefined) => {
 
 const cleanCountryName = (countryStr?: string): string => {
   if (!countryStr) return "";
-  return countryStr
+  const res = countryStr
     .replace(/^[A-Z]{2}\s*[-–:]?\s*/, "")
     .replace(/^(LK|IN|VN|BD|PK|US)\s+/i, "")
     .trim();
+  if (res.toLowerCase().replace(/\s+/g, "") === "vietnam") {
+    return "Viet Nam";
+  }
+  return res;
 };
 
 // Customized Pie Chart Colors matching user's image
@@ -848,12 +852,16 @@ function FreightDashboard({ transportMode, onModeChange }: { transportMode: Tran
 
       if (!sErr && !bErr && Array.isArray(dbStations) && Array.isArray(dbBranches)) {
         const locations = classifyRecipientLocations(dbStations, dbBranches);
-        const formattedStations: StationInfo[] = locations.stations.map(s => ({
-          code: s.code, name: s.name || s.code, country: s.country || s.name || s.code,
-          envVar: s.env_var || `RECIPIENTS_${s.code}`,
-          matchCountries: Array.isArray(s.match_countries) ? s.match_countries : (s.country ? [String(s.country).toLowerCase()] : []),
-          isCustom: false,
-        }));
+        const formattedStations: StationInfo[] = locations.stations.map(s => {
+          const isVnm = s.code === "VNM" || (s.country && s.country.toLowerCase().replace(/\s+/g, "") === "vietnam");
+          const normCountry = isVnm ? "Viet Nam" : (s.country || s.name || s.code);
+          return {
+            code: s.code, name: s.name || s.code, country: normCountry,
+            envVar: s.env_var || `RECIPIENTS_${s.code}`,
+            matchCountries: Array.isArray(s.match_countries) ? s.match_countries : (normCountry ? [String(normCountry).toLowerCase()] : []),
+            isCustom: false,
+          };
+        });
         const formattedBranches: BranchInfo[] = locations.branches.map(b => ({
           code: b.code, name: b.name || b.code, city: b.city || b.name,
           company_code: b.company_code, country: b.country, isCustom: false,
@@ -1205,6 +1213,10 @@ function FreightDashboard({ transportMode, onModeChange }: { transportMode: Tran
 
         for (const stationCode of stationsToProcess) {
           const stObj = stationsList.find(s => s.code === stationCode);
+          let targetCountry = stObj?.country || "India";
+          if (stationCode === "VNM" || (targetCountry && targetCountry.toLowerCase().replace(/\s+/g, "") === "vietnam")) {
+            targetCountry = "Viet Nam";
+          }
           const filters: any = {
             transport_mode: transportMode,
             mode: "standard",
@@ -1213,7 +1225,7 @@ function FreightDashboard({ transportMode, onModeChange }: { transportMode: Tran
             use_fixed_dates: Boolean(schedStartDate && schedEndDate),
             max_data_rows: 100,
             report_level: "station",
-            country: stObj?.country || "India",
+            country: targetCountry,
             company_code: stObj?.code || stationCode,
           };
           if (schedStartDate) filters.start_date = schedStartDate;
@@ -1469,7 +1481,12 @@ function FreightDashboard({ transportMode, onModeChange }: { transportMode: Tran
   // --- BRANCH OPTIONS & SQL QUERY GENERATORS (Uses Supabase dynamic lists)
   const BRANCH_OPTIONS = branchesList;
 
-  const getStationwiseSqlTemplate = (country = "India", companyCode = "IND", sDate = "2026-06-01", eDate = "2026-06-07") => buildFreightQuery(`-- Station-wise Report Query Template
+  const getStationwiseSqlTemplate = (country = "India", companyCode = "IND", sDate = "2026-06-01", eDate = "2026-06-07") => {
+    let targetCountry = country;
+    if (companyCode === "VNM" || (targetCountry && targetCountry.toLowerCase().replace(/\s+/g, "") === "vietnam")) {
+      targetCountry = "Viet Nam";
+    }
+    return buildFreightQuery(`-- Station-wise Report Query Template
 SELECT
     vt.ConsoleNumber AS Console_Number,
     vt.MasterBillNum AS Master_Airway_Bill,
@@ -1493,7 +1510,7 @@ LEFT JOIN dbo.ChatData_ViewShipConsolLink vsc
     ON vsc.Link_ConsolNumber = vt.ConsoleNumber
 LEFT JOIN dbo.ChatData_ViewRevandVolume_ShipmentDate vs
     ON vs.ShipmentNumber = vsc.Link_ShipmentNum
-WHERE vt.ConLoadPortCountryName = '${country}'
+WHERE vt.ConLoadPortCountryName = '${targetCountry}'
     AND vt.ETD >= '${sDate}'
     AND vt.ETD <= '${eDate}'
     AND vt.TransportMode = 'AIR'
@@ -1505,8 +1522,14 @@ GROUP BY vt.ConsoleNumber, vt.MasterBillNum, vt.AirlineName1,
          COALESCE(vt.RealDisChargePortCountryName, 'N/A'),
          COALESCE(vt.RealDisChargePortCity, 'N/A')
 ORDER BY vt.ETD DESC, ROUND(SUM(vs.Revenue_USD), 2) DESC;`, transportMode);
+  };
 
-  const getBranchwiseSqlTemplate = (country = "India", companyCode = "IND", branch = "BLR", sDate = "2026-06-01", eDate = "2026-06-07") => buildFreightQuery(`-- Branch-wise Report Query Template (${branch})
+  const getBranchwiseSqlTemplate = (country = "India", companyCode = "IND", branch = "BLR", sDate = "2026-06-01", eDate = "2026-06-07") => {
+    let targetCountry = country;
+    if (companyCode === "VNM" || (targetCountry && targetCountry.toLowerCase().replace(/\s+/g, "") === "vietnam")) {
+      targetCountry = "Viet Nam";
+    }
+    return buildFreightQuery(`-- Branch-wise Report Query Template (${branch})
 SELECT
     vt.ConsoleNumber AS Console_Number,
     vt.MasterBillNum AS Master_Airway_Bill,
@@ -1539,7 +1562,7 @@ LEFT JOIN dbo.ChatData_ViewShipConsolLink vsc
     ON vsc.Link_ConsolNumber = vt.ConsoleNumber
 LEFT JOIN dbo.ChatData_ViewRevandVolume_ShipmentDate vs
     ON vs.ShipmentNumber = vsc.Link_ShipmentNum
-WHERE vt.ConLoadPortCountryName = '${country}'
+WHERE vt.ConLoadPortCountryName = '${targetCountry}'
     AND vt.ETD >= '${sDate}'
     AND vt.ETD <= '${eDate}'
     AND vt.TransportMode = 'AIR'
@@ -1561,6 +1584,7 @@ GROUP BY vt.ConsoleNumber, vt.MasterBillNum, vt.AirlineName1,
          vs.AgentCode,
          vs.AgentName
 ORDER BY vt.ETD DESC, vs.Branch, ROUND(SUM(vs.Revenue_USD), 2) DESC;`, transportMode);
+  };
 
   // Section level report types (Station-wise vs Branch-wise)
   const [weeklyReportLevel, setWeeklyReportLevel] = useState<"station" | "branch">("station");
@@ -2191,6 +2215,10 @@ ORDER BY vt.ETD DESC, vs.Branch, ROUND(SUM(vs.Revenue_USD), 2) DESC;`, transport
   };
 
   const handleSendStationEmail = async (stationCode: string, country: string) => {
+    let targetCountry = country;
+    if (stationCode === "VNM" || (targetCountry && targetCountry.toLowerCase().replace(/\s+/g, "") === "vietnam")) {
+      targetCountry = "Viet Nam";
+    }
     const emails = stationSelectedEmails[stationCode] || [];
     if (emails.length === 0) {
       setStationEmailStatus(prev => ({ ...prev, [stationCode]: "Please select at least one recipient." }));
@@ -2267,7 +2295,7 @@ SELECT
 FROM dbo.ChatData_ViewShipConsolTransport vt
 LEFT JOIN dbo.ChatData_ViewShipConsolLink vsc ON vsc.Link_ConsolNumber = vt.ConsoleNumber
 LEFT JOIN dbo.ChatData_ViewRevandVolume_ShipmentDate vs ON vs.ShipmentNumber = vsc.Link_ShipmentNum
-WHERE vt.ConLoadPortCountryName = '${country}'
+WHERE vt.ConLoadPortCountryName = '${targetCountry}'
     AND vt.ETD >= '${startDate}'
     AND vt.ETD <= '${endDate}'
     AND vt.TransportMode = 'AIR'

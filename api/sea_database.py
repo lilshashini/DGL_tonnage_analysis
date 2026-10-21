@@ -9,7 +9,7 @@ from api.database import build_multi_in_clause, run_query, to_clean_records
 STATION_ZONES = {"IND": "Asia/Kolkata", "CMB": "Asia/Colombo", "VNM": "Asia/Ho_Chi_Minh",
                  "DAC": "Asia/Dhaka", "PKI": "Asia/Karachi", "NYC": "America/New_York"}
 COUNTRY_ZONES = {"india": "Asia/Kolkata", "sri lanka": "Asia/Colombo", "vietnam": "Asia/Ho_Chi_Minh",
-                 "bangladesh": "Asia/Dhaka", "pakistan": "Asia/Karachi"}
+                 "viet nam": "Asia/Ho_Chi_Minh", "bangladesh": "Asia/Dhaka", "pakistan": "Asia/Karachi"}
 SEA_GROUP_SQL = "COALESCE(NULLIF(vt.ShippingLineGroup, ''), 'Unknown Group')"
 
 
@@ -53,6 +53,8 @@ def build_sea_query(start_date, end_date, country=None, airline=None,
     TEU and volume belong to the consol. MAX prevents each linked shipment from
     multiplying those quantities; revenue is summed at consol grain.
     """
+    if country and str(country).strip().lower().replace(" ", "") == "vietnam":
+        country = "Viet Nam"
     params = {"start_date": start_date, "end_date": end_date}
     filters = "\n    ".join([
         build_multi_in_clause(column, value, params, prefix)
@@ -246,6 +248,8 @@ def get_sea_options(kind, start_date, end_date, country=None, company_code=None)
     }
     column = columns[kind]
     country_column = "COALESCE(vt.RealDisChargePortCountryName, 'N/A')" if kind == "destination-cities" else "vt.ConLoadPortCountryName"
+    if country and str(country).strip().lower().replace(" ", "") == "vietnam":
+        country = "Viet Nam"
     params = {"start_date": start_date, "end_date": end_date}
     country_filter = build_multi_in_clause(country_column, country, params, "country")
     company_filter = build_multi_in_clause("vs.Company", company_code, params, "company")

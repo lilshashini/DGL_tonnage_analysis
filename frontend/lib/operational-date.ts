@@ -5,7 +5,7 @@ const STATIONS: Record<string, string> = {
 };
 const COUNTRIES: Record<string, string> = {
   india: "Asia/Kolkata", "sri lanka": "Asia/Colombo", vietnam: "Asia/Ho_Chi_Minh",
-  bangladesh: "Asia/Dhaka", pakistan: "Asia/Karachi",
+  "viet nam": "Asia/Ho_Chi_Minh", bangladesh: "Asia/Dhaka", pakistan: "Asia/Karachi",
 };
 
 export function operationalDay(value: unknown, company?: string, country?: string): string {

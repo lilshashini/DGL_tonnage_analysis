@@ -190,6 +190,16 @@ def to_clean_records(df: pd.DataFrame) -> list:
 
 
 
+def normalize_country_name(country=None):
+    """Normalizes country names to match the DW representation (e.g. 'Vietnam' -> 'Viet Nam')."""
+    if not country:
+        return country
+    clean = str(country).strip()
+    if clean.lower().replace(" ", "") == "vietnam":
+        return "Viet Nam"
+    return clean
+
+
 def build_multi_in_clause(column_expr: str, value_str: str, params: dict, param_prefix: str) -> str:
     """
     Parses a comma-separated string of values, adds param bindings to params dict,
@@ -200,6 +210,10 @@ def build_multi_in_clause(column_expr: str, value_str: str, params: dict, param_
     values = [v.strip() for v in value_str.split(",") if v.strip()]
     if not values:
         return ""
+
+    if "country" in column_expr.lower():
+        values = [normalize_country_name(v) for v in values]
+        values = list(dict.fromkeys(values))
     
     placeholders = []
     for i, val in enumerate(values):
@@ -369,6 +383,7 @@ def get_countries(start_date: str, end_date: str, company_code: str = None):
 
 def get_airlines(start_date: str, end_date: str, country: str = None):
     """Returns the distinct airlines available within the date range and optional country filter."""
+    country = normalize_country_name(country)
     query = """
     SELECT DISTINCT vt.AirlineName1 AS airline
     FROM dbo.ChatData_ViewShipConsolTransport vt
@@ -732,6 +747,7 @@ def get_branches(company_code: str = None):
 
 def get_origin_cities(start_date: str, end_date: str, country: str = None):
     """Returns distinct origin cities within the date range, optionally filtered by country."""
+    country = normalize_country_name(country)
     query = """
     SELECT DISTINCT vt.ConLoadPortCity AS city
     FROM dbo.ChatData_ViewShipConsolTransport vt
@@ -761,6 +777,7 @@ def get_destination_countries(start_date: str, end_date: str):
 
 def get_destination_cities(start_date: str, end_date: str, country: str = None):
     """Returns distinct destination cities within the date range, optionally filtered by country."""
+    country = normalize_country_name(country)
     query = """
     SELECT DISTINCT vt.ConDischargePortCity AS city
     FROM dbo.ChatData_ViewShipConsolTransport vt
@@ -798,6 +815,21 @@ def execute_custom_query(sql_str: str):
         if query_upper.lstrip().startswith(keyword):
             raise ValueError(f"Query sandbox does not allow {keyword} operations. This is a read-only query execution environment.")
     
+    # Auto-normalize "Vietnam" to "Viet Nam" for country column comparisons
+    import re
+    sql_str = re.sub(
+        r"(\b(?:[a-zA-Z0-9_]+\.)?(?:ConLoadPortCountryName|RealLoadPortCountryName|RealDisChargePortCountryName|ConDischargePortCountryName)\s*=\s*)'Vietnam'",
+        r"\1'Viet Nam'",
+        sql_str,
+        flags=re.IGNORECASE
+    )
+    sql_str = re.sub(
+        r"(\b(?:[a-zA-Z0-9_]+\.)?(?:ConLoadPortCountryName|RealLoadPortCountryName|RealDisChargePortCountryName|ConDischargePortCountryName)\s+IN\s*\([^)]*?)'Vietnam'([^)]*?\))",
+        r"\1'Viet Nam'\2",
+        sql_str,
+        flags=re.IGNORECASE
+    )
+
     try:
         df = run_query(sql_str)
         return to_clean_records(df)
