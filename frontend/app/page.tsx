@@ -32,6 +32,7 @@ import { buildRecipientGroups, recipientAssignmentCodes, updateRecipientAssignme
 import { resolveScheduleScope } from "@/lib/schedule-scope";
 import { buildScheduleRecipients } from "@/lib/schedule-recipients";
 import { ScheduleRecipientPicker } from "@/components/schedule-recipient-picker";
+import { ScheduleRunStatus, ScheduleRunState } from "@/components/schedule-run-status";
 
 import { TransportMode, freightText, buildFreightQuery, formatFreightQuantity } from "@/lib/freight";
 import { SeaConsolReport } from "@/components/sea-consol-report";
@@ -946,6 +947,8 @@ function FreightDashboard({ transportMode, onModeChange }: { transportMode: Tran
   // --- SCHEDULER STATES ---
   const [schedules, setSchedules] = useState<any[]>([]);
   const [schedulerLoading, setSchedulerLoading] = useState(false);
+  const [scheduleRun, setScheduleRun] = useState<ScheduleRunState | null>(null);
+  const scheduleRunInFlight = useRef(false);
   const [schedulerTimezone, setSchedulerTimezone] = useState("Asia/Colombo");
   const [selectedScheduleIds, setSelectedScheduleIds] = useState<string[]>([]);
   const [scheduleSearch, setScheduleSearch] = useState("");
@@ -1297,20 +1300,42 @@ function FreightDashboard({ transportMode, onModeChange }: { transportMode: Tran
     }
   };
 
-  const handleRunScheduleNow = async (scheduleId: string) => {
+  const handleRunScheduleNow = async (schedule: any) => {
+    if (scheduleRunInFlight.current) return;
+    scheduleRunInFlight.current = true;
+    const context = {
+      scheduleId: String(schedule.id),
+      report: `${transportMode === "SEA" ? "Sea" : "Air"} Freight · ${String(schedule.frequency || "Scheduled").replace(/^./, letter => letter.toUpperCase())} report`,
+      scope: resolveScheduleScope(schedule.filters || {}, stationsList, branchesList).label,
+      recipients: Array.from(new Set<string>(String(schedule.recipient_email || "").split(",").map(email => email.trim()).filter(Boolean))),
+    };
+    setScheduleRun({...context, status: "sending", message: "Generating your report and sending it to the recipients below. This may take a moment."});
     try {
       const authHeaders = await getAuthHeaders();
-      const res = await fetch(`${API}/api/schedules/${scheduleId}/run`, {
+      const res = await fetch(`${API}/api/schedules/${encodeURIComponent(schedule.id)}/run`, {
         method: "POST",
         headers: {
           "Authorization": authHeaders.Authorization
         }
       });
-      const data = await res.json();
-      alert(data.message || "Manual run initiated.");
+      const data = await res.json().catch(() => null);
+      const message = typeof data?.detail === "string" ? data.detail : typeof data?.message === "string" ? data.message : "";
+      if (!res.ok) throw new Error(message || `The report request failed (HTTP ${res.status}).`);
+      if (data?.status === "success") {
+        setScheduleRun({...context, status: "sent", message: message || "Your report was generated and the email service accepted it for sending."});
+      } else if (data?.status === "skipped") {
+        setScheduleRun({...context, status: "skipped", message: message || "This schedule was not run. Check whether it is active."});
+      } else {
+        throw new Error(message || "The server did not confirm sending. Check the report email before running this schedule again.");
+      }
     } catch (e) {
       console.error(e);
-      alert("Failed to run schedule manually.");
+      const message = e instanceof TypeError
+        ? "The connection was interrupted, so sending could not be confirmed. Check the report email before running this schedule again."
+        : e instanceof Error ? e.message : "Sending could not be confirmed. Please check the report email before trying again.";
+      setScheduleRun({...context, status: "error", message});
+    } finally {
+      scheduleRunInFlight.current = false;
     }
   };
 
@@ -6122,11 +6147,15 @@ ORDER BY vt.ETD DESC, ROUND(SUM(vs.Revenue_USD), 2) DESC;
                                           <div className="flex items-center justify-end gap-1.5">
                                             <button
                                               type="button"
-                                              onClick={() => handleRunScheduleNow(s.id)}
-                                              className="p-1.5 rounded-lg bg-indigo-50 text-indigo-600 hover:bg-indigo-100 border border-indigo-100 transition-colors"
-                                              title="Run Report Now"
+                                              onClick={() => handleRunScheduleNow(s)}
+                                              disabled={scheduleRun?.status === "sending"}
+                                              aria-label={scheduleRun?.status === "sending" && scheduleRun.scheduleId === String(s.id) ? "Sending report" : "Run Report Now"}
+                                              className="p-1.5 rounded-lg bg-indigo-50 text-indigo-600 hover:bg-indigo-100 border border-indigo-100 transition-colors disabled:opacity-50 disabled:cursor-wait"
+                                              title={scheduleRun?.status === "sending" && scheduleRun.scheduleId === String(s.id) ? "Sending report…" : "Run Report Now"}
                                             >
-                                              <Play className="w-3.5 h-3.5" />
+                                              {scheduleRun?.status === "sending" && scheduleRun.scheduleId === String(s.id)
+                                                ? <RefreshCw className="w-3.5 h-3.5 animate-spin" />
+                                                : <Play className="w-3.5 h-3.5" />}
                                             </button>
                                             <button
                                               type="button"
@@ -8945,6 +8974,8 @@ ORDER BY vt.ETD DESC, ROUND(SUM(vs.Revenue_USD), 2) DESC;
           </div>
         </div>
       )}
+
+      {scheduleRun && <ScheduleRunStatus run={scheduleRun} onClose={() => setScheduleRun(null)} />}
 
       {/* ── DELETE SCHEDULE CONFIRMATION MODAL ── */}
       {schedulesToDelete && schedulesToDelete.length > 0 && (
