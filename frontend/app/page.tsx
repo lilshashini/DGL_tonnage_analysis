@@ -30,6 +30,8 @@ import { TONNAGE_USERS_TABLE } from "@/lib/tonnage-tables";
 import { classifyRecipientLocations } from "@/lib/recipient-locations";
 import { buildRecipientGroups, recipientAssignmentCodes, updateRecipientAssignment } from "@/lib/recipient-assignments";
 import { resolveScheduleScope } from "@/lib/schedule-scope";
+import { buildScheduleRecipients } from "@/lib/schedule-recipients";
+import { ScheduleRecipientPicker } from "@/components/schedule-recipient-picker";
 
 import { TransportMode, freightText, buildFreightQuery, formatFreightQuantity } from "@/lib/freight";
 import { SeaConsolReport } from "@/components/sea-consol-report";
@@ -958,7 +960,6 @@ function FreightDashboard({ transportMode, onModeChange }: { transportMode: Tran
   const [schedSelectedBranches, setSchedSelectedBranches] = useState<string[]>([]);
   const [schedRecipientMode, setSchedRecipientMode] = useState<"groups" | "person">("groups");
   const [schedPersonEmail, setSchedPersonEmail] = useState("");
-  const [schedPersonSearch, setSchedPersonSearch] = useState("");
   const [schedSections, setSchedSections] = useState({include_weekly_visual: true, include_weekly_ledger: true, include_monthly_visual: true, include_monthly_ledger: true});
   const [schedSelectedRecipientSources, setSchedSelectedRecipientSources] = useState<string[]>([]);
   const [isSchedStationDropdownOpen, setIsSchedStationDropdownOpen] = useState(false);
@@ -983,7 +984,8 @@ function FreightDashboard({ transportMode, onModeChange }: { transportMode: Tran
   const [schedStartDate, setSchedStartDate] = useState("");
   const [schedEndDate, setSchedEndDate] = useState("");
   const scheduleRecipients = schedRecipientMode === "person" ? schedPersonEmail : schedRecipients;
-  const schedPeople = dbUsers.filter(user => transportMode === "SEA" ? user.is_sea === true : user.is_air !== false);
+  const schedPeople = useMemo(() => buildScheduleRecipients(dbUsers, orgUsers, transportMode)
+    .filter(user => isReportEmail(user.email) && !DUMMY_EMAILS.includes(user.email)), [dbUsers, orgUsers, transportMode]);
 
   const handleScheduleForPerson = (user: any, locationCode?: string) => {
     const assignments = recipientAssignmentCodes(user.station);
@@ -992,7 +994,6 @@ function FreightDashboard({ transportMode, onModeChange }: { transportMode: Tran
     const isBranch = branchesList.some(branch => branch.code === code);
     setSchedRecipientMode("person");
     setSchedPersonEmail(String(user.email || "").trim().toLowerCase());
-    setSchedPersonSearch("");
     setSchedSelectedRecipientSources([]);
     setSchedRecipients("");
     setSchedReportLevel(isBranch ? "branch" : "station");
@@ -1110,8 +1111,8 @@ function FreightDashboard({ transportMode, onModeChange }: { transportMode: Tran
 
   const handleCreateSchedule = async () => {
     const emails = Array.from(new Set(scheduleRecipients.split(",").map(email => email.trim().toLowerCase()).filter(Boolean)));
-    if (schedRecipientMode === "person" && !schedPeople.some(user => user.email.toLowerCase() === schedPersonEmail)) {
-      setSchedStatusMessage(`Select a directory recipient with ${transportMode} reports enabled.`);
+    if (schedRecipientMode === "person" && !schedPeople.some(user => user.email === schedPersonEmail && user.enabled)) {
+      setSchedStatusMessage(`Select a Microsoft AD or saved recipient with ${transportMode} reports enabled.`);
       setSchedStatusSuccess(false);
       return;
     }
@@ -1399,14 +1400,16 @@ function FreightDashboard({ transportMode, onModeChange }: { transportMode: Tran
     }
   };
 
-  const fetchOrgUsers = useCallback(async () => {
-    if (orgUsers.length > 0) return; // already loaded
+  const orgUsersRequest = useRef(false);
+  const fetchOrgUsers = useCallback(async (force = false) => {
+    if (orgUsersRequest.current || (!force && orgUsers.length > 0)) return;
+    orgUsersRequest.current = true;
     setOrgUsersLoading(true);
     setOrgUsersError("");
     try {
       const res = await fetch(`${API}/api/org-users`);
       const d = await res.json();
-      if (d.status === "success") {
+      if (res.ok && d.status === "success") {
         setOrgUsers(d.users || []);
         setOrgUsersByDept(d.byDepartment || {});
         // Merge org user emails into availableEmails (deduplicate)
@@ -1421,6 +1424,7 @@ function FreightDashboard({ transportMode, onModeChange }: { transportMode: Tran
     } catch (e: any) {
       setOrgUsersError("Could not connect to API. Check that the server is running.");
     } finally {
+      orgUsersRequest.current = false;
       setOrgUsersLoading(false);
     }
   }, [orgUsers.length]);
@@ -4824,7 +4828,7 @@ ORDER BY vt.ETD DESC, ROUND(SUM(vs.Revenue_USD), 2) DESC;
                               </Badge>
                             )}
                             <button
-                              onClick={() => { setOrgUsers([]); fetchOrgUsers(); }}
+                              onClick={() => fetchOrgUsers(true)}
                               className="p-1.5 rounded-lg hover:bg-slate-100 text-slate-400 hover:text-slate-600 transition-colors"
                               title="Refresh users"
                             >
@@ -5069,20 +5073,10 @@ ORDER BY vt.ETD DESC, ROUND(SUM(vs.Revenue_USD), 2) DESC;
                               </button>
                             ))}
                           </div>
-                          {schedRecipientMode === "person" && <div className="space-y-2">
-                            <label htmlFor={`schedule-person-${transportMode}`} className="block text-xs font-semibold text-slate-700">Recipient</label>
-                            <Input aria-label="Search schedule recipient" placeholder="Search recipients by name or email" value={schedPersonSearch} onChange={event => setSchedPersonSearch(event.target.value)} className="h-9 bg-white border-blue-100 text-xs" />
-                            <select id={`schedule-person-${transportMode}`} value={schedPersonEmail}
-                              onChange={event => setSchedPersonEmail(event.target.value)} className="w-full h-9 rounded-lg border border-blue-100 bg-white px-2 text-xs text-slate-700">
-                              <option value="">Select one recipient</option>
-                              {schedPersonEmail && !schedPeople.some(user => user.email.toLowerCase() === schedPersonEmail) && <option value={schedPersonEmail}>{schedPersonEmail} (reports disabled)</option>}
-                              {schedPeople.filter(user => user.email.toLowerCase() === schedPersonEmail || `${user.display_name} ${user.email}`.toLowerCase().includes(schedPersonSearch.toLowerCase())).map(user => (
-                                <option key={user.id} value={user.email.toLowerCase()}>{user.display_name || user.email} · {user.email}</option>
-                              ))}
-                            </select>
-                            {schedPersonEmail && !schedPeople.some(user => user.email.toLowerCase() === schedPersonEmail) && <p className="text-xs text-amber-700">This recipient has {transportMode} reports turned off in the directory. Enable their freight preference to select them.</p>}
-                            <p className="text-[11px] text-slate-500">Only the selected person receives this schedule. Choose their report scope and timing below.</p>
-                          </div>}
+                          {schedRecipientMode === "person" && <ScheduleRecipientPicker
+                            people={schedPeople} recipient={schedPersonEmail} onChange={setSchedPersonEmail} mode={transportMode}
+                            loading={orgUsersLoading || dbUsersLoading} error={orgUsersError ? `Microsoft AD: ${orgUsersError}` : ""}
+                            onRefresh={() => {fetchOrgUsers(true); fetchDbUsers();}} />}
                         </div>
                         {/* Report Level: Stationwise vs Branchwise */}
                         <div>
